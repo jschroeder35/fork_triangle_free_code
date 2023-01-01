@@ -51,7 +51,8 @@ class trie:
 
 trielist=[]
 etrielist=[]
-graph_check_hash={}
+graph_hash={}
+color_hash={}
 
 class etrie:
     ###This class is for tries containing keys with only edges (not non-edges) for the purpose of generating non-edge lists
@@ -124,6 +125,15 @@ class graph:
     def contains_subgraphs(self, subgraph_list):
         ###This method wants to check if any graph from subgraph_list appears in self.
         ###If so, it returns True, otherwise it returns false.
+        
+        ###check if graph is in hash map first
+        subgraphs_key=[]
+        for subgraph in subgraph_list:
+            subgraphs_key.append(tuple([(frozenset(vertex.edges), frozenset(vertex.non_edges), vertex.color) for vertex in subgraph.vertex_list]))
+        graph_key = (tuple([(frozenset(vertex.edges), frozenset(vertex.non_edges), vertex.color) for vertex in self.vertex_list]), tuple(subgraphs_key))
+        if graph_key in graph_hash:
+            return graph_hash[graph_key]
+        
         ### the method generates a trie from the subgraph list, then performs a dfs starting from each vertex using the trie
         ttrie=None
         for graph_list, temp in trielist:
@@ -153,11 +163,13 @@ class graph:
                 tpast_vertex_list.append(vertex.index)
                 ###check if a subgraph has been completed. If so, return True
                 if trienode.is_end==True:
+                    graph_hash[graph_key]=True
                     return True
                 ###Continue the search on vertices not yet added to the subgraph (if it's not completed)
                 for vertex2 in self.vertex_list:
                     if (vertex2.index not in tpast_vertex_list):
                         queue.append((vertex2, trienode, tpast_vertex_list))
+        graph_hash[graph_key]=False
         return False
 
     def get_edgelists(self, subgraph_list):
@@ -217,6 +229,46 @@ class graph:
                         out.remove(temp_list[j])
         return out
 
+    def get_subgraph_list(self, subgraph):
+        ###this method generates a list of all distinct copies of subgraph in the graph, up to reordering
+        
+        ### the method generates a trie from the subgraph list, then performs a dfs starting from each vertex using the trie
+        ttrie=None
+        for graph_list, temp in trielist:
+            if [subgraph]==graph_list:
+                ttrie=temp
+        if not ttrie:
+            ttrie=trie()
+            ttrie.initialize([subgraph])
+            trielist.append(([subgraph], ttrie))
+        #ttrie.show()
+        ###Make a queue to store all remaining positions to search from while doing the dfs
+        queue=collections.deque()
+        out=set()
+        for vertex in self.vertex_list:
+            queue.append((vertex, ttrie.root, []))
+
+        while queue:
+            vertex, trienode, past_vertex_list = queue.pop()
+            tpast_vertex_list=copy.copy(past_vertex_list)
+            ###need to convert vertex indices to match the indices of the subgraph, and filter down to only those corresponding to vertices already added to our partial list
+            temp_edges=[i for i, vert in enumerate(past_vertex_list) if vert in vertex.edges]
+            temp_non_edges=[i for i, vert in enumerate(past_vertex_list) if vert in vertex.non_edges]
+            key=(frozenset(temp_edges), frozenset(temp_non_edges))
+            #print(vertex.index, past_vertex_list)
+            ###now we can check if the vertex is a valid addition to build out one of our subgraphs.
+            if key in trienode.children:
+                trienode=trienode.children[key]
+                tpast_vertex_list.append(vertex.index)
+                ###check if a subgraph has been completed. If so, return True
+                if trienode.is_end==True:
+                    out.add(frozenset(tpast_vertex_list))
+                ###Continue the search on vertices not yet added to the subgraph (if it's not completed)
+                for vertex2 in self.vertex_list:
+                    if (vertex2.index not in tpast_vertex_list):
+                        queue.append((vertex2, trienode, tpast_vertex_list))
+        return out
+    
     def clean(self):
         #####This method fixes the edge/non-edge lists of the graph. #####
         #####If v1 has v2 in its edge list, but v2 doesn't have v1 in its edge list, then clean will append v1 to v2's edge list. #####
@@ -388,21 +440,6 @@ class graph:
                 for neighbor in start_vertex.edges:
                     self.vertex_list[neighbor].color=i
                     i=i+1
-
-        #######If it is not the starting vertex and a neighbor must be a certain color to force it's own color, then assign a color to that neighbor ##########
-#         if (start_vertex.max_degree != None) and (start_vertex.color_start==False):
-#             if len(start_vertex.edges) == start_vertex.max_degree and (len(uncolored_neighbors) == 1):
-#                 if start_vertex.color !=None:
-#                     color_list.append(start_vertex.color)
-#                     color_list = list(set(color_list))
-#                 if len(({0, 1, 2} - set(color_list)))>1:
-#                     #print('Contradiction!')
-#                     return True
-#                 if len(({0, 1, 2} - set(color_list)))==1:
-#                     if self.vertex_list[uncolored_neighbors[0]].color_start==True:
-#                         return True
-#                     else:
-#                         self.vertex_list[uncolored_neighbors[0]].color= list(set([0, 1, 2]) - set(color_list))[0]
 
         ########Fix up the graph (non-edges) after adding new colors #########
         self.clean_colors()
@@ -660,9 +697,82 @@ class graph:
             if not updated:
                 break
         return False
+    
+    def update_graph5(self, subgraph_list, add_vertices=True, quick_update=False, max_distance=10, verbose=False):
+        ###update the graph and seek smart color argument updates in an automated fashion. 
+        
+        ###First, we need to clear away any partial coloring in the graph
+        for vertex in self.vertex_list:
+            vertex.color=None
+            vertex.color_start=False
+            
+        while True:
+            ###run either update_graph3 or update_graph4 based on whether adding vertices is allowed
+            if add_vertices:
+                if self.update_graph4(subgraph_list, start_vert=None, verbose=verbose, with_colors=False):
+                    return True
+            else:
+                if self.update_graph3(subgraph_list, start_vert=None, verbose=verbose, with_colors=False):
+                    return True
+            
+            ###now, search for pairs of vertices with neighborhood containment
+            old_graph = copy.deepcopy(self)
+            
+            for v1 in self.vertex_list:
+                for v2 in self.vertex_list:
+                    for v3 in self.vertex_list:
+                        ###check that vertices are distinct, and that N(v1) < N(v2) \cup N(v3)
+                        if not (v1 !=v2 and v1 !=v3 and v2.index<v3.index and set(v1.edges + v1.unknown).issubset(set(v2.edges + v3.edges))):
+                            continue
+                        ###Add a new neighbor adjacent to v1 not adjacent to v2 or v3 and check if that yields a contradiction
+                        temp_graph=copy.deepcopy(self)
+                        new_vert=vert([v1.index], [v2.index, v3.index], len(temp_graph.vertex_list))
+                        temp_graph.vertex_list.append(new_vert)
+                        temp_graph.clean()
+                        if verbose:
+                            print('Checking if N({}) is contained in N({}) and N({})'.format(v1.index, v2.index, v3.index))
+                        ###If the update returns a contradiction, proceed, otherwise break
+                        if quick_update:
+                            if not temp_graph.update_graph2(subgraph_list, 1, start_vert=None, verbose=False, with_colors=False):
+                                continue
+                        else:
+                            if not temp_graph.update_graph3(subgraph_list, start_vert=None, verbose=False, with_colors=False):
+                                continue
 
-
-    def color_argument2(self, subgraph_list, start_vert, done_list, current_distance, max_distance, max_depth, verbose=True):
+                        ###Now we run a coloring argument
+                        if verbose:
+                            print('N({}) is contained in N({}) and N({}). Attempting coloring...'.format(v1.index, v2.index, v3.index))
+                        v2.color=0
+                        v3.color=1
+                        v1.color_start=True
+                        if self.fill_in_colors():
+                            if verbose:
+                                print('Contradiction obtained filling in colors.')
+                            return True
+                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices):
+                            return True
+                        
+                        ###reset the colors after
+                        for vertex in self.vertex_list:
+                            vertex.color=None
+                            vertex.color_start=False
+            
+            ###check for updates
+            updated=False
+            if len(self.vertex_list) != len(old_graph.vertex_list):
+                updated=True
+            else:
+                for vertex in self.vertex_list:
+                    if ((set(vertex.edges) != set(old_graph.vertex_list[vertex.index].edges)) or
+                        (set(vertex.non_edges) != set(old_graph.vertex_list[vertex.index].non_edges))
+                       ):
+                        updated=True
+            if not updated:
+                break
+                
+        return False
+    
+    def color_argument(self, subgraph_list, start_vert, done_list, current_distance, max_distance, max_depth, verbose=True, add_vertices=True):
         #####This method recursively builds out new structure to the graph #####
         ##### done_list is the set of vertices already visited by color_argument2 within the recursion ######
         ##### current_distance is the recursion depth/distance in the graph from the starting vertex
@@ -680,26 +790,21 @@ class graph:
                     return False
 
         #####Check for each color that it exists among neighbors#########
+        done_list2=[pair[0] for pair in done_list]
         if (current_distance < max_distance) and (self.depth2 < max_depth):
             for temp_color in color_list:
                 #####Check for already colored neighbors#####
                 list0 = []
                 for edge_index in start_vertex.edges:
                     vertex1=self.vertex_list[edge_index]
-                    if (vertex1.color == temp_color) and (vertex1.index not in done_list):
-                        temp_done_list = done_list + [start_vert]
-                        temp_graph = copy.deepcopy(self)
-                        temp_graph.depth2= self.depth2+1
-                        #####Recurse on vertex1
-                        bool1=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
-                        if bool1==False:
-                            list0.append(vertex1.index)
+                    if (vertex1.color == temp_color) and (vertex1.index not in done_list2):
+                        list0.append(vertex1.index)
 
                 #####Check for uncolored neighbors that could be assigned that color#####
                 list1=[]
                 for edge_index in start_vertex.edges:
                     vertex1=self.vertex_list[edge_index]
-                    if (vertex1.color == None) and (vertex1.index not in done_list):
+                    if (vertex1.color == None) and (vertex1.index not in done_list2):
                         #####Check that vertex1 can be colored with temp_color #####
                         neighbor_colors = []
                         for edge_index2 in vertex1.edges:
@@ -712,16 +817,13 @@ class graph:
 
                             #####Assuming no contradiction, recurse on vertex1#####
                             if not temp_graph.update_graph2(subgraph_list, 1):
-                                temp_done_list = done_list + [start_vert]
-                                bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
-                                if bool3==False:
-                                    list1.append(vertex1.index)
+                                list1.append(vertex1.index)
 
                 #####Check for potential neighbors that could be that color#####
                 list2=[]
                 for edge_index in start_vertex.unknown:
                     vertex1=self.vertex_list[edge_index]
-                    if (vertex1.color == None) and (vertex1.index not in done_list):
+                    if (vertex1.color == None) and (vertex1.index not in done_list2):
                         #####Check that it can be assigned temp_color #####
                         neighbor_colors = []
                         for edge_index2 in vertex1.edges:
@@ -737,10 +839,7 @@ class graph:
                             temp_graph.clean()
                             #####Assuming no contradiction, recurse on vertex1 #####
                             if not temp_graph.update_graph2(subgraph_list, 1):
-                                temp_done_list = done_list + [start_vert]
-                                bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
-                                if bool3==False:
-                                    list2.append(vertex1.index)
+                                list2.append(vertex1.index)
 
                 #####Check if a new vertex of that color could be added#####
                 list3=[]
@@ -755,16 +854,13 @@ class graph:
                     temp_graph.clean()
                     #####Assuming no contradiction, recurse on temp_vert #####
                     if not temp_graph.update_graph2(subgraph_list, 1):
-                        temp_done_list = done_list + [start_vert]
-                        bool3=temp_graph.color_argument2(subgraph_list, temp_vert.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
-                        if bool3==False:
-                            list3.append(temp_vert.index)
+                        list3.append(temp_vert.index)
 
                 #####Check for potential neighbors that are already that color (poor order but I forgot and came back to this)#####
                 list4=[]
                 for edge_index in start_vertex.unknown:
                     vertex1=self.vertex_list[edge_index]
-                    if (vertex1.color == temp_color) and (vertex1.index not in done_list):
+                    if (vertex1.color == temp_color) and (vertex1.index not in done_list2):
                         #####Copy graph and add the edge #####
                         temp_graph = copy.deepcopy(self)
                         temp_graph.depth2= self.depth2+1
@@ -773,23 +869,40 @@ class graph:
                         temp_graph.clean()
                         #####Assuming no contradiction, recurse on vertex1 #####
                         if not temp_graph.update_graph2(subgraph_list, 1):
-                            temp_done_list = done_list + [start_vert]
-                            bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
-                            if bool3==False:
-                                list4.append(vertex1.index)
-
-                #####Uncommenting this line will show much more detailed output of the algorithm, although it is admittedly pretty difficult to read #####
+                            list4.append(vertex1.index)
+                                
+                ###Check for vertices in the done_list that would be assigned that color in the recoloring strategy that are already neighbors.
+                list5=[]
+                for index, color in done_list:
+                    if color==temp_color and index in start_vertex.edges:
+                        list5.append(index)
+                
+                ###Check for vertices in the done_list that would be assigned that color in the recoloring strategy that could be neighbors.
+                list6=[]
+                for index, color in done_list:
+                    if color==temp_color and index in start_vertex.unknown:
+                        #####Copy graph and add the edge #####
+                        temp_graph = copy.deepcopy(self)
+                        temp_graph.depth2= self.depth2+1
+                        temp_graph.vertex_list[index].edges.append(start_vert)
+                        #####Clean the graph #####
+                        temp_graph.clean()
+                        #####Assuming no contradiction, recurse on vertex1 #####
+                        if not temp_graph.update_graph2(subgraph_list, 1):
+                            list6.append(index)
+                
+                #####Uncommenting this line will show much more detailed output of the algorithm, although it is admittedly somewhat difficult to read #####
                 if verbose:
-                    print('vertex: ' + str(start_vert) + ', done_list: ' + str(done_list) + ', colors: ' +  str(start_vertex.color) + '->' + str(temp_color) + ', depth: ' +  str(self.depth2) + ', ' + str([list0, list1, list2, list3, list4]) + ', num_vertices: ' + str(len(self.vertex_list)))
+                    print('vertex: ' + str(start_vert) + ', done_list: ' + str(done_list) + ', colors: ' +  str(start_vertex.color) + '->' + str(temp_color) + ', ' + str([list0, list1, list2, list3, list4, list5, list6]) + ', num_vertices: ' + str(len(self.vertex_list)) )
                 #####If there are no ways to force the color, return True #####
-                if (len(list0 + list1 + list2 + list3 + list4) ==0):
+                if (len(list0) + len(list1) + len(list2) + len(list3) + len(list4)+ len(list5)+len(list6) ==0):
                     #self.show()
                     return True
                 #####If there is only one way to force that color, append that structure #####
-                elif (len(list0 + list1 + list2 + list3 + list4) ==1):
+                elif (len(list0) + len(list1) + len(list2) + len(list3) + len(list4)+ len(list5)+len(list6) ==1) and self.depth2==0:
                     #####If a neighbor is already colored with temp_color #####
                     if len(list0) > 0:
-                        if self.color_argument2(subgraph_list, list0[0], done_list + [start_vert], current_distance + 1, max_distance, max_depth, verbose):
+                        if self.color_argument(subgraph_list, list0[0], done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices):
                             return True
                     #####Coloring a vertex #####
                     if len(list1) > 0:
@@ -798,7 +911,7 @@ class graph:
                         self.clean()
                         if self.update_graph2(subgraph_list, 1):
                             return True
-                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [start_vert], current_distance + 1, max_distance, max_depth, verbose):
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices):
                             return True
                     #####Adding an edge and coloring a vertex #####
                     if len(list2) > 0:
@@ -808,7 +921,272 @@ class graph:
                         self.clean()
                         if self.update_graph2(subgraph_list, 1):
                             return True
-                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [start_vert], current_distance + 1, max_distance, max_depth, verbose):
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices):
+                            return True
+
+                    #####Appending a vertex to the graph, coloring it, and adding an edge #####
+                    if len(list3) > 0 and add_vertices:
+                        temp_vert = vert([start_vert], [], len(temp_graph.vertex_list))
+                        temp_vert.color=temp_color
+                        self.vertex_list.append(temp_vert)
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
+                            return True
+                        if self.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices):
+                            return True
+                    
+                    ###still recurse, but on a copy of the graph if add_vertices is False
+                    if len(list3) > 0 and not add_vertices:
+                        temp_graph=copy.deepcopy(self)
+                        temp_vert = vert([start_vert], [], len(temp_graph.vertex_list))
+                        temp_vert.color=temp_color
+                        temp_graph.vertex_list.append(temp_vert)
+                        temp_graph.clean()
+                        if temp_graph.update_graph2(subgraph_list, 1):
+                            return True
+                        if temp_graph.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices):
+                            return True
+
+                    #####Adding an edge #####
+                    if len(list4) > 0:
+                        vertex1=self.vertex_list[list4[0]]
+                        vertex1.edges.append(start_vert)
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
+                            return True
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
+                            return True
+                    
+                    ###Add an edge ###
+                    if len(list6) > 0:
+                        vertex1=self.vertex_list[list4[0]]
+                        vertex1.edges.append(start_vert)
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
+                            return True
+        return False
+    
+    def color_argument_iter(self, subgraph_list, start_vert, max_distance, verbose=True, add_vertices=True):
+        #####This method iteratively applies the prior method, checks for updates, as well as checking for forks between applying coloring arguments. #####
+        #####This method hides a lot of the inputs for color_argument2 to make it more 'user friendly' #####
+        k=0
+        while True:
+            k=k+1
+            if verbose:
+                print('Iteration: ' + str(k))
+                print('There are ' + str(len(self.vertex_list)) + ' vertices in the graph.')
+            
+            old_graph = copy.deepcopy(self)
+            #####With the changes to the code, there is not much meaningful difference between the distance and depth. I can probably remove the second variable in the next update but I wanted to get this update out sooner. #####
+            if self.color_argument(subgraph_list, start_vert, [], 0, max_distance, max_distance, verbose, add_vertices):
+                return True
+            if self.check_for_subgraphs_iter(subgraph_list, 1):
+                return True
+            #####Check for updates
+            updated =False
+            if len(self.vertex_list)!=len(old_graph.vertex_list):
+                updated=True
+            if updated==False:
+                for vertex1 in self.vertex_list:
+                    for vertex2 in old_graph.vertex_list:
+                        if (vertex1.index==vertex2.index) and (vertex1.color !=vertex2.color):
+                            updated=True
+                        if (vertex1.index==vertex2.index) and (vertex1.edges !=vertex2.edges):
+                            updated=True
+                        if (vertex1.index==vertex2.index) and (vertex1.non_edges !=vertex2.non_edges):
+                            updated=True
+            if not updated:
+                break
+        return False
+    
+    
+    def color_argument2(self, subgraph_list, start_vert, done_list, current_distance, max_distance, max_depth, verbose=True):
+        #####This method recursively builds out new structure to the graph #####
+        ##### done_list is the set of vertices already visited by color_argument2 within the recursion ######
+        ##### current_distance is the recursion depth/distance in the graph from the starting vertex
+        ##### max_distance is the max distance allowed within the graph
+        ##### max_depth is the max recursion depth to which the graph is allowed to be modified
+        start_vertex=self.vertex_list[start_vert]
+        global color_hash
+
+        #####color_list is colors to be forced #####
+        color_list = list(set([0, 1, 2]) - set([start_vertex.color]))
+
+        #####It leads to algorithmic errors if you don't check that you haven't looped back to the start######
+        if current_distance > 1:
+            for edge_index in start_vertex.edges:
+                if (self.vertex_list[edge_index].color_start ==True):
+                    return False
+
+        #####Check for each color that it exists among neighbors#########
+        done_list2=[pair[0] for pair in done_list]
+        if (current_distance < max_distance) and (self.depth2 < max_depth):
+            for temp_color in color_list:
+                #####Check for already colored neighbors#####
+                list0 = []
+                list0_2 = []
+                for edge_index in start_vertex.edges:
+                    vertex1=self.vertex_list[edge_index]
+                    if (vertex1.color == temp_color) and (vertex1.index not in done_list2):
+                        list0_2.append(vertex1.index)
+                        temp_done_list = done_list + [(start_vert, temp_color)]
+                        temp_graph = copy.deepcopy(self)
+                        temp_graph.depth2= self.depth2+1
+                        #####Recurse on vertex1
+                        bool1=False
+                        #bool1=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
+                        if bool1==False:
+                            list0.append(vertex1.index)
+
+                #####Check for uncolored neighbors that could be assigned that color#####
+                list1=[]
+                list1_2=[]
+                for edge_index in start_vertex.edges:
+                    vertex1=self.vertex_list[edge_index]
+                    if (vertex1.color == None) and (vertex1.index not in done_list2):
+                        #####Check that vertex1 can be colored with temp_color #####
+                        neighbor_colors = []
+                        for edge_index2 in vertex1.edges:
+                            neighbor_colors.append(self.vertex_list[edge_index2].color)
+                        if temp_color not in neighbor_colors:
+                            #####Copy graph and color vertex #####
+                            temp_graph = copy.deepcopy(self)
+                            temp_graph.depth2= self.depth2+1
+                            temp_graph.vertex_list[vertex1.index].color=temp_color
+
+                            #####Assuming no contradiction, recurse on vertex1#####
+                            if not temp_graph.update_graph2(subgraph_list, 1):
+                                list1_2.append(vertex1.index)
+                                temp_done_list = done_list + [(start_vert, temp_color)]
+                                bool3=False
+                                #bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
+                                if bool3==False:
+                                    list1.append(vertex1.index)
+
+                #####Check for potential neighbors that could be that color#####
+                list2=[]
+                list2_2=[]
+                for edge_index in start_vertex.unknown:
+                    vertex1=self.vertex_list[edge_index]
+                    if (vertex1.color == None) and (vertex1.index not in done_list2):
+                        #####Check that it can be assigned temp_color #####
+                        neighbor_colors = []
+                        for edge_index2 in vertex1.edges:
+                            neighbor_colors.append(self.vertex_list[edge_index2].color)
+                        if temp_color not in neighbor_colors:
+                            #####Copy graph and add color and the new edge #####
+                            temp_graph = copy.deepcopy(self)
+                            temp_graph.depth2= self.depth2+1
+                            vertex3=temp_graph.vertex_list[vertex1.index]
+                            vertex3.color=temp_color
+                            vertex3.edges.append(start_vert)
+                            #####Clean the graph structure now that new structure has been added #####
+                            temp_graph.clean()
+                            #####Assuming no contradiction, recurse on vertex1 #####
+                            if not temp_graph.update_graph2(subgraph_list, 1):
+                                list2_2.append(vertex1.index)
+                                temp_done_list = done_list + [(start_vert, temp_color)]
+                                bool3=False
+                                #bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
+                                if bool3==False:
+                                    list2.append(vertex1.index)
+
+                #####Check if a new vertex of that color could be added#####
+                list3=[]
+                list3_2=[]
+                if len(start_vertex.edges) != start_vertex.max_degree:
+                    ##### Copy graph and add vertex #####
+                    temp_graph = copy.deepcopy(self)
+                    temp_graph.depth2= self.depth2+1
+                    temp_vert = vert([start_vert], [], max(self.index_list) + 1)
+                    temp_vert.color=temp_color
+                    temp_graph.vertex_list.append(temp_vert)
+                    #####Clean the graph #####
+                    temp_graph.clean()
+                    #####Assuming no contradiction, recurse on temp_vert #####
+                    if not temp_graph.update_graph2(subgraph_list, 1):
+                        list3_2.append(temp_vert.index)
+                        temp_done_list = done_list + [(start_vert, temp_color)]
+                        bool3=False
+                        #bool3=temp_graph.color_argument2(subgraph_list, temp_vert.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
+                        if bool3==False:
+                            list3.append(temp_vert.index)
+
+                #####Check for potential neighbors that are already that color (poor order but I forgot and came back to this)#####
+                list4=[]
+                list4_2=[]
+                for edge_index in start_vertex.unknown:
+                    vertex1=self.vertex_list[edge_index]
+                    if (vertex1.color == temp_color) and (vertex1.index not in done_list2):
+                        #####Copy graph and add the edge #####
+                        temp_graph = copy.deepcopy(self)
+                        temp_graph.depth2= self.depth2+1
+                        temp_graph.vertex_list[vertex1.index].edges.append(start_vert)
+                        #####Clean the graph #####
+                        temp_graph.clean()
+                        #####Assuming no contradiction, recurse on vertex1 #####
+                        if not temp_graph.update_graph2(subgraph_list, 1):
+                            list4_2.append(vertex1.index)
+                            temp_done_list = done_list + [(start_vert, temp_color)]
+                            bool3=False
+                            #bool3=temp_graph.color_argument2(subgraph_list, vertex1.index, temp_done_list, current_distance + 1, max_distance, max_depth, verbose)
+                            if bool3==False:
+                                list4.append(vertex1.index)
+                                
+                ###Check for vertices in the done_list that would be assigned that color in the recoloring strategy that are already neighbors.
+                list5=[]
+                for index, color in done_list:
+                    if color==temp_color and index in start_vertex.edges:
+                        list5.append(index)
+                
+                ###Check for vertices in the done_list that would be assigned that color in the recoloring strategy that could be neighbors.
+                list6=[]
+                for index, color in done_list:
+                    if color==temp_color and index in start_vertex.unknown:
+                        #####Copy graph and add the edge #####
+                        temp_graph = copy.deepcopy(self)
+                        temp_graph.depth2= self.depth2+1
+                        temp_graph.vertex_list[index].edges.append(start_vert)
+                        #####Clean the graph #####
+                        temp_graph.clean()
+                        #####Assuming no contradiction, recurse on vertex1 #####
+                        if not temp_graph.update_graph2(subgraph_list, 1):
+                            list6.append(index)
+                
+                ###Commit the information for this vertex to the hashmap
+                color_hash[(start_vertex.index, temp_color, tuple(done_list))]= ([list0_2, list1_2, list2_2, list3_2, list4_2, list5, list6], [list0, list1, list2, list3, list4, list5, list6])
+                
+                #####Uncommenting this line will show much more detailed output of the algorithm, although it is admittedly pretty difficult to read #####
+                if verbose:
+                    print('vertex: ' + str(start_vert) + ', done_list: ' + str(done_list) + ', colors: ' +  str(start_vertex.color) + '->' + str(temp_color) + ', depth: ' +  str(self.depth2) + ', ' + str([list0, list1, list2, list3, list4, list5, list6]) + ', num_vertices: ' + str(len(self.vertex_list)) + ', color_hash: ' + str(color_hash[(start_vertex.index, temp_color, tuple(done_list))]) )
+                #####If there are no ways to force the color, return True #####
+                if (len(list0) + len(list1) + len(list2) + len(list3) + len(list4)+ len(list5)+len(list6) ==0):
+                    #self.show()
+                    return True
+                #####If there is only one way to force that color, append that structure #####
+                elif (len(list0) + len(list1) + len(list2) + len(list3) + len(list4)+ len(list5)+len(list6) ==1) and self.depth2==0:
+                    #####If a neighbor is already colored with temp_color #####
+                    if len(list0) > 0:
+                        if self.color_argument2(subgraph_list, list0[0], done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
+                            return True
+                    #####Coloring a vertex #####
+                    if len(list1) > 0:
+                        vertex1=self.vertex_list[list1[0]]
+                        vertex1.color=temp_color
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
+                            return True
+                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
+                            return True
+                    #####Adding an edge and coloring a vertex #####
+                    if len(list2) > 0:
+                        vertex1=self.vertex_list[list2[0]]
+                        vertex1.color=temp_color
+                        vertex1.edges.append(start_vert)
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
+                            return True
+                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
                             return True
 
                     #####Appending a vertex to the graph, coloring it, and adding an edge #####
@@ -820,7 +1198,7 @@ class graph:
                         self.clean()
                         if self.update_graph2(subgraph_list, 1):
                             return True
-                        if self.color_argument2(subgraph_list, temp_vert.index, done_list + [start_vert], current_distance + 1, max_distance, max_depth, verbose):
+                        if self.color_argument2(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
                             return True
 
                     #####Adding an edge #####
@@ -830,7 +1208,15 @@ class graph:
                         self.clean()
                         if self.update_graph2(subgraph_list, 1):
                             return True
-                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [start_vert], current_distance + 1, max_distance, max_depth, verbose):
+                        if self.color_argument2(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose):
+                            return True
+                    
+                    ###Add an edge ###
+                    if len(list6) > 0:
+                        vertex1=self.vertex_list[list4[0]]
+                        vertex1.edges.append(start_vert)
+                        self.clean()
+                        if self.update_graph2(subgraph_list, 1):
                             return True
         return False
 
@@ -843,6 +1229,8 @@ class graph:
             if verbose:
                 print('Iteration: ' + str(k))
                 print('There are ' + str(len(self.vertex_list)) + ' vertices in the graph.')
+            global color_hash
+            #color_hash={}
             old_graph = copy.deepcopy(self)
             #####With the changes to the code, there is not much meaningful difference between the distance and depth. I can probably remove the second variable in the next update but I wanted to get this update out sooner. #####
             if self.color_argument2(subgraph_list, start_vert, [], 0, max_distance, max_distance, verbose):
@@ -867,6 +1255,13 @@ class graph:
         return False
 
 
+v_0 = vert([1, 4], [2, 3], 0)
+v_1 = vert([0, 2], [3, 4], 1)
+v_2 = vert([1, 3], [4, 0], 2)
+v_3 = vert([2, 4], [0, 1], 3)
+v_4 = vert([3, 0], [1, 2], 4)
+C_5=graph([v_0, v_1, v_2, v_3, v_4])
+    
 v_0 = vert([1, 2], [], 0)
 v_1 = vert([0, 2], [], 1)
 v_2 = vert([0, 1], [], 2)
