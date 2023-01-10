@@ -57,7 +57,8 @@ class trie:
 trielist=[]
 etrielist=[]
 graph_hash={}
-edgelist_hash={}
+max_hash_size=50000
+#edgelist_hash={}
 
 class etrie:
     ###This class is for tries containing keys with only edges (not non-edges) for the purpose of generating non-edge lists
@@ -143,9 +144,17 @@ class graph:
         subgraphs_key=[]
         for subgraph in subgraph_list:
             subgraphs_key.append(tuple([(frozenset(vertex.edges), frozenset(vertex.non_edges)) if vertex.fixed_index==False else (frozenset(vertex.edges), frozenset(vertex.non_edges), vertex.index) for vertex in subgraph.vertex_list]))
-        graph_key = (tuple([(frozenset(vertex.edges), frozenset(vertex.non_edges)) for vertex in self.vertex_list]), tuple(subgraphs_key))
-        if graph_key in graph_hash:
-            return graph_hash[graph_key]
+        subgraphs_key=tuple(subgraphs_key)
+        if subgraphs_key not in graph_hash:
+            graph_hash[subgraphs_key] = collections.OrderedDict()
+        graph_key = tuple([(frozenset(vertex.edges), frozenset(vertex.non_edges)) for vertex in self.vertex_list])
+        
+        ###hashmap manipulations
+        if graph_key in graph_hash[subgraphs_key]:
+            graph_hash[subgraphs_key].move_to_end(graph_key)
+            return graph_hash[subgraphs_key][graph_key]
+        elif len(graph_hash[subgraphs_key])==max_hash_size:
+            graph_hash[subgraphs_key].popitem(last=False)
 
         ### the method generates a trie from the subgraph list, then performs a dfs starting from each vertex using the trie
         global trielist
@@ -180,13 +189,15 @@ class graph:
                     tpast_vertex_list2=tpast_vertex_list+[vertex.index]
                     ###check if a subgraph has been completed. If so, return True
                     if trienode2.is_end==True:
-                        graph_hash[graph_key]=True
+                        graph_hash[subgraphs_key][graph_key]=True
+                        graph_hash[subgraphs_key].move_to_end(graph_key)
                         return True
                     ###Continue the search on vertices not yet added to the subgraph (if it's not completed)
                     for vertex2 in self.vertex_list:
                         if (vertex2.index not in tpast_vertex_list2):
                             queue.append((vertex2, trienode2, tpast_vertex_list2))
-        graph_hash[graph_key]=False
+        graph_hash[subgraphs_key][graph_key]=False
+        graph_hash[subgraphs_key].move_to_end(graph_key)
         return False
 
     def get_edgelists(self, subgraph_list):
@@ -656,8 +667,13 @@ class graph:
             edgelists=self.get_edgelists(subgraph_list)
             dist_two_verts=[]
             for v in self.vertex_list:
+                ###check first that distance is at least 2 from min_indices
                 if set(min_indices).issubset(set(v.non_edges)):
-                    dist_two_verts.append(v.index)
+                    ###Now, check that distance is at most 2 from min_indices
+                    for w in v.edges:
+                        if len(set(self.vertex_list[w].edges).intersection(set(min_indices)))>0:
+                            dist_two_verts.append(v.index)
+                            break
             updated=False
             if verbose:
                 print("Subgraphs: {}".format(subgraphs))
@@ -883,7 +899,7 @@ class graph:
                         return True
                     if len(index_list)==1:
                         if verbose:
-                            print('Vertex {} added to the graph that cannot be adjacent to {}'.format(len(self.vertex_list), list(tset)))
+                            print('Vertex {} added adjacent to {} that cannot be adjacent to {}'.format(len(self.vertex_list), index_list[0], list(tset)))
                         new_vert=vert([index_list[0]], list(tset), len(self.vertex_list))
                         self.vertex_list.append(new_vert)
                         self.clean()
@@ -901,7 +917,7 @@ class graph:
                             self.vertex_list.append(new_vertex)
                             self.clean()
                             if verbose:
-                                print('Vertex {} added! '.format(new_vertex.index))
+                                print('Vertex {} added adjacent to {} that cannot be in N({})! '.format(new_vertex.index, vertex1.index, vertex2.index))
                             updated=True
                         elif ((vertex1.max_degree != None) and (len(vertex1.edges) >= vertex1.max_degree)):
                             return True
@@ -1079,12 +1095,6 @@ class graph:
 
         #####color_list is colors to be forced #####
         color_list = list(set([0, 1, 2]) - set([start_vertex.color]))
-
-        #####It leads to algorithmic errors if you don't check that you haven't looped back to the start######
-        if current_distance > 1:
-            for edge_index in start_vertex.edges:
-                if (self.vertex_list[edge_index].color_start ==True):
-                    return False
 
         #####Check for each color that it exists among neighbors#########
         done_list2=[pair[0] for pair in done_list]
