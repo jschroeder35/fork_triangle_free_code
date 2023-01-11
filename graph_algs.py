@@ -648,7 +648,7 @@ class graph:
                 break
         return False
 
-    def update_graph2_2(self, subgraph_list, max_depth, verbose=False, with_colors=True, min_subgraph=None):
+    def update_graph2_2(self, subgraph_list, max_depth=1, verbose=False, with_colors=True, min_subgraph=None):
         ###Modified version of update_graph2 that (optionally) supports obtaining structure/contradictions through adding vertices that are forced through minimal 5-cycle arguments.
         ###If a min_subgraph argument is passed, the code requires that the graph is formatted such that the vertices with the smallest indices in the graph correspond to the minimal subgraph.
 
@@ -924,8 +924,20 @@ class graph:
             if not updated:
                 break
         return False
-
-    def update_graph5(self, subgraph_list, add_vertices=True, update_speed='medium', max_distance=10, verbose=False, min_subgraph=None, check_deg_three=False):
+    
+    def update_graph_flexible(self, subgraph_list, update_speed, verbose=False, min_subgraph=None, with_colors=True, max_depth=1):
+        ###can take an input parameter to determine with graph update function to run-mostly just to save repetitive lines of code.
+        if update_speed=='fast':
+            if self.update_graph2_2(subgraph_list, max_depth, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph):
+                return True
+        elif update_speed=='medium':
+            if self.update_graph3(subgraph_list, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph, max_depth=max_depth):
+                return True
+        elif update_speed=='slow':
+            if self.update_graph4(subgraph_list, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph, max_depth=max_depth):
+                return True
+    
+    def update_graph5(self, subgraph_list, add_vertices=True, update_speed='medium', max_distance=10, verbose=False, min_subgraph=None, check_deg_three=False, carg_update_speed='fast'):
         ###update the graph and seek smart color argument updates in an automated fashion.
 
         ###First, we need to clear away any partial coloring in the graph
@@ -963,15 +975,9 @@ class graph:
                                 temp_graph.vertex_list[vidx].non_edges.append(v2.index)
                                 temp_graph.vertex_list[vidx].non_edges.append(v3.index)
                                 temp_graph.clean()
-                                if update_speed=='fast':
-                                    if not temp_graph.update_graph2_2(subgraph_list, 1, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                        continue
-                                elif update_speed=='medium':
-                                    if not temp_graph.update_graph3(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                        continue
-                                elif update_speed=='slow':
-                                    if not temp_graph.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                        continue
+                                if not temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                                    escape=True
+                                    break
                             if escape:
                                 continue
                         ###Add a new neighbor adjacent to v1 not adjacent to v2 or v3 and check if that yields a contradiction
@@ -982,15 +988,8 @@ class graph:
                         if verbose:
                             print('Checking if N({}) is contained in N({}) and N({})'.format(v1.index, v2.index, v3.index))
                         ###If the update returns a contradiction, proceed, otherwise break
-                        if update_speed=='fast':
-                            if not temp_graph.update_graph2_2(subgraph_list, 1, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                continue
-                        elif update_speed=='medium':
-                            if not temp_graph.update_graph3(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                continue
-                        elif update_speed=='slow':
-                            if not temp_graph.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                                continue
+                        if not temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                            continue
 
                         ###Now we run a coloring argument
                         if verbose:
@@ -1002,7 +1001,7 @@ class graph:
                             if verbose:
                                 print('Contradiction obtained filling in colors.')
                             return True
-                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph):
+                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
                             return True
 
                         ###reset the colors after
@@ -1020,15 +1019,9 @@ class graph:
                     temp_graph.vertex_list.append(new_vert)
                     temp_graph.clean()
                     deg_three=False
-                    if update_speed=='fast':
-                        if temp_graph.update_graph2_2(subgraph_list, 1, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                            deg_three=True
-                    elif update_speed=='medium':
-                        if temp_graph.update_graph3(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                            deg_three=True
-                    elif update_speed=='slow':
-                        if temp_graph.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
-                            deg_three=True
+                    if temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                        deg_three=True
+
                     ###in both cases, we try to color, but if the degree is 3, then the coloring returns a contradiction if the degree is not forced to be 3, then a coloring contradiction forces a new neighbor.
                     if deg_three:
                         if verbose:
@@ -1038,7 +1031,7 @@ class graph:
                             if verbose:
                                 print('Contradiction obtained filling in colors.')
                             return True
-                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph):
+                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
                             return True
                     ###this is the case where the degree is not forced to be 3. 
                     elif add_vertices:
@@ -1049,7 +1042,7 @@ class graph:
                         add_vert=False
                         if temp_graph.fill_in_colors(v1.index):
                             add_vert=True
-                        if (not add_vert) and temp_graph.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph):
+                        if (not add_vert) and temp_graph.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
                             add_vert=True
                         ###add a new vertex and update if a contradiction was thrown. 
                         if add_vert:
@@ -1058,12 +1051,7 @@ class graph:
                             new_vert=vert([v1.index], [], len(self.vertex_list))
                             self.vertex_list.append(new_vert)
                             self.clean()
-                            if update_speed=='fast':
-                                self.update_graph2_2(subgraph_list, 1, verbose=False, with_colors=False, min_subgraph=min_subgraph)
-                            elif update_speed=='medium':
-                                self.update_graph3(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph)
-                            elif update_speed=='slow':
-                                self.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph)                        
+                            self.update_graph3(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph)                 
 
                     ###reset the colors after, for either case
                     for vertex in self.vertex_list:
@@ -1085,7 +1073,7 @@ class graph:
 
         return False
 
-    def color_argument(self, subgraph_list, start_vert, done_list, current_distance, max_distance, max_depth, verbose=True, add_vertices=True, min_subgraph=None):
+    def color_argument(self, subgraph_list, start_vert, done_list, current_distance, max_distance, max_depth, verbose=True, add_vertices=True, min_subgraph=None, carg_update_speed='fast'):
         #####This method recursively builds out new structure to the graph #####
         ##### done_list is the set of vertices already visited by color_argument within the recursion ######
         ##### current_distance is the recursion depth/distance in the graph from the starting vertex
@@ -1123,8 +1111,8 @@ class graph:
                             temp_graph.depth2= self.depth2+1
                             temp_graph.vertex_list[vertex1.index].color=temp_color
 
-                            #####Assuming no contradiction, recurse on vertex1#####
-                            if not temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                            #####If no contradiction upon update, append to the appropriate list#####
+                            if not temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                                 list1.append(vertex1.index)
                                 graph_list.append(temp_graph)
 
@@ -1146,8 +1134,8 @@ class graph:
                             vertex3.edges.append(start_vert)
                             #####Clean the graph structure now that new structure has been added #####
                             temp_graph.clean()
-                            #####Assuming no contradiction, recurse on vertex1 #####
-                            if not temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                            #####If no contradiction upon update, append to the appropriate list#####
+                            if not temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                                 list2.append(vertex1.index)
                                 graph_list.append(temp_graph)
 
@@ -1162,8 +1150,8 @@ class graph:
                     temp_graph.vertex_list.append(temp_vert)
                     #####Clean the graph #####
                     temp_graph.clean()
-                    #####Assuming no contradiction, recurse on temp_vert #####
-                    if not temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                    #####If no contradiction upon update, append to the appropriate list#####
+                    if not temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                         list3.append(temp_vert.index)
                         graph_list.append(temp_graph)
 
@@ -1178,8 +1166,8 @@ class graph:
                         temp_graph.vertex_list[vertex1.index].edges.append(start_vert)
                         #####Clean the graph #####
                         temp_graph.clean()
-                        #####Assuming no contradiction, recurse on vertex1 #####
-                        if not temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        #####If no contradiction upon update, append to the appropriate list#####
+                        if not temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             list4.append(vertex1.index)
                             graph_list.append(temp_graph)
 
@@ -1199,8 +1187,8 @@ class graph:
                         temp_graph.vertex_list[index].edges.append(start_vert)
                         #####Clean the graph #####
                         temp_graph.clean()
-                        #####Assuming no contradiction, recurse on vertex1 #####
-                        if not temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        #####If no contradiction upon update, append to the appropriate list#####
+                        if not temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             list6.append(index)
 
                 #####Uncommenting this line will show much more detailed output of the algorithm, although it is admittedly somewhat difficult to read #####
@@ -1215,16 +1203,16 @@ class graph:
                 elif (len(list0) + len(list1) + len(list2) + len(list3) + len(list4)+ len(list5)+len(list6) ==1) and self.depth2==0:
                     #####If a neighbor is already colored with temp_color #####
                     if len(list0) > 0:
-                        if self.color_argument(subgraph_list, list0[0], done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph):
+                        if self.color_argument(subgraph_list, list0[0], done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph, carg_update_speed):
                             return True
                     #####Coloring a vertex #####
                     if len(list1) > 0:
                         vertex1=self.vertex_list[list1[0]]
                         vertex1.color=temp_color
                         self.clean()
-                        if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
-                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph):
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph, carg_update_speed):
                             return True
                     #####Adding an edge and coloring a vertex #####
                     if len(list2) > 0:
@@ -1232,9 +1220,9 @@ class graph:
                         vertex1.color=temp_color
                         vertex1.edges.append(start_vert)
                         self.clean()
-                        if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
-                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph):
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph, carg_update_speed):
                             return True
 
                     #####Appending a vertex to the graph, coloring it, and adding an edge #####
@@ -1243,9 +1231,9 @@ class graph:
                         temp_vert.color=temp_color
                         self.vertex_list.append(temp_vert)
                         self.clean()
-                        if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
-                        if self.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph):
+                        if self.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph, carg_update_speed):
                             return True
 
                     ###still recurse, but on a copy of the graph if add_vertices is False
@@ -1255,9 +1243,9 @@ class graph:
                         temp_vert.color=temp_color
                         temp_graph.vertex_list.append(temp_vert)
                         temp_graph.clean()
-                        if temp_graph.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if temp_graph.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
-                        if temp_graph.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph):
+                        if temp_graph.color_argument(subgraph_list, temp_vert.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, add_vertices, min_subgraph, carg_update_speed):
                             return True
 
                     #####Adding an edge #####
@@ -1265,9 +1253,9 @@ class graph:
                         vertex1=self.vertex_list[list4[0]]
                         vertex1.edges.append(start_vert)
                         self.clean()
-                        if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
-                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, min_subgraph):
+                        if self.color_argument(subgraph_list, vertex1.index, done_list + [(start_vert, temp_color)], current_distance + 1, max_distance, max_depth, verbose, min_subgraph, carg_update_speed):
                             return True
 
                     ###Add an edge ###
@@ -1275,7 +1263,7 @@ class graph:
                         vertex1=self.vertex_list[list4[0]]
                         vertex1.edges.append(start_vert)
                         self.clean()
-                        if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+                        if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                             return True
                         
                 elif (len(list0) + len(list5) + len(list6) ==0):
@@ -1310,7 +1298,7 @@ class graph:
                                     self.clean()
         return False
 
-    def color_argument_iter(self, subgraph_list, start_vert, max_distance, verbose=True, add_vertices=True, min_subgraph=None):
+    def color_argument_iter(self, subgraph_list, start_vert, max_distance, verbose=True, add_vertices=True, min_subgraph=None, carg_update_speed='fast'):
         #####This method iteratively applies the prior method, checks for updates, as well as checking for forks between applying coloring arguments. #####
         #####This method hides a lot of the inputs for color_argument to make it more 'user friendly' #####
         k=0
@@ -1322,9 +1310,9 @@ class graph:
 
             old_graph = copy.deepcopy(self)
             #####With the changes to the code, there is not much meaningful difference between the distance and depth. I can probably remove the second variable in the next update but I wanted to get this update out sooner. #####
-            if self.color_argument(subgraph_list, start_vert, [], 0, max_distance, max_distance, verbose, add_vertices, min_subgraph):
+            if self.color_argument(subgraph_list, start_vert, [], 0, max_distance, max_distance, verbose, add_vertices, min_subgraph, carg_update_speed):
                 return True
-            if self.update_graph2_2(subgraph_list, 1, min_subgraph=min_subgraph):
+            if self.update_graph_flexible(subgraph_list, carg_update_speed, min_subgraph=min_subgraph):
                 return True
             #####Check for updates
             updated =False
