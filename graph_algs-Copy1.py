@@ -177,7 +177,7 @@ class vert:
             that, if True, indicates that the index of this vertex must be the
             same as the index of the vertex being matched to it in the graph
             being searched (default is False).
-        clist: list of possible colors for this vertex, used only within
+        color_list: list of possible colors for this vertex, used only within
             algorithms (default is None).
     """
     def __init__(self, edges, non_edges, index):
@@ -196,7 +196,7 @@ class vert:
         self.max_degree=None 
         self.color=None 
         self.color_start=False 
-        self.clist=None 
+        self.color_list=None 
         self.fixed_index=False 
 
 class graph:
@@ -301,11 +301,11 @@ class graph:
             t_non_edges=[i for i, v in enumerate(vlist) if v in v0.non_edges]
             key1=(frozenset(t_edges), frozenset(t_non_edges))
             key2=(frozenset(t_edges), frozenset(t_non_edges), v0.index)
-            #print(v0.index, key1, vlist)
             # Now we can check if the vertex is a valid addition to build out 
             # one of our subgraphs.
             for key in [key1, key2]:
                 if key in trienode.children:
+                    #print(key)
                     trienode2=trienode.children[key]
                     t_vlist2=t_vlist+[v0.index]
                     # If a subgraph has been completed, return True
@@ -513,8 +513,8 @@ class graph:
             i+=1
             if i==1000:
                 print('Clean got stuck in a loop. There was an invalid graph' 
-                      + ' update. You need to interrupt the kernel and do'
-                      + ' some debugging.')
+                      + ' update. You need to interrupt the kernel and do some'
+                      + ' debugging.')
                 self.show()
             updated=False
             for v in self.vertex_list:
@@ -549,123 +549,112 @@ class graph:
 
 
     def check_for_subgraphs(self, subgraph_list, depth_cutoff=1):
-        """Treating subgraph_list as a list of forbidden subgraphs, searches 
-        the graph for any graph in subgraph_list with .contains_subgraphs(), 
-        then for each unknown pair of vertices, it tries adding that pair as 
-        an edge/non_edge in temporary graphs, then recurses up to depth_cutoff. 
-        If the graph contains a forbidden subgraph in both cases, returns 
-        True, otherwise, if a forbidden subgraph is found when an edge is 
-        added between a pair of vertices, a non-edge is added to the graph, 
-        or vice versa.
-        
-        Args:
-            subgraph_list (list[graph]): List of forbidden subgraphs.
-            depth_cutoff (int): max recursion depth (default is 1)
-        
-        Returns:
-            bool: True if forbidden subgraph is found to exist in the graph, 
-                otherwise False.
-        """
-        
+        #123456789012345678901234567890123456789012345678901234567890123456789012345678
+        #####This method scans the graph for graphs in the sugraph list, as well as seeing if appending certain edges/nonedges is forced by forks or triangles. #####
+        #####Will test all combinations of n edges/non-edges, where n is the depth_cutoff#####
+        #####In practice, little is gained by a depth cutoff of more than one#####
+        #####Method returns True if a fork/triangle is forced, False otherwise #####
         if self.contains_subgraphs(subgraph_list):
             return True
 
         if self.depth1 < depth_cutoff:
-            for v in self.vertex_list:
-                if len(v.unknown) == 0:
-                    continue
-                for edge in v.unknown:
-                    # Prevents running each case twice
-                    if edge > v.index: 
-                        # Make a temporary graph with the appended edge
-                        temp_graph = copy.deepcopy(self)
-                        temp_graph.vertex_list[v.index].edges.append(edge)
-                        temp_graph.clean()
-                        # Depth tracks the amount of recursion
-                        temp_graph.depth1=self.depth1+1 
-                        # Make another temp graph with the appended non-edge 
-                        temp_graph2 = copy.deepcopy(self)
-                        temp_graph2.vertex_list[v.index].non_edges.append(edge)
-                        temp_graph2.clean()
-                        temp_graph2.depth1=self.depth1+1 
+            for vertex in self.vertex_list:
+                if len(vertex.unknown) > 0:
+                    for edge in vertex.unknown:
+                        if edge > vertex.index: #####Prevents running each case twice, to cut down the runtime #####
+                            #####Make a temporary graph with the appended edge#####
+                            temp_graph = copy.deepcopy(self)
+                            temp_graph.vertex_list[vertex.index].edges.append(edge)
+                            temp_graph.clean()
+                            temp_graph.depth1=self.depth1+1 #####Need to increase the depth, so it doesn't recurse forever
 
-                        # Check both cases and store output
-                        bool1 = temp_graph.check_for_subgraphs(
-                            subgraph_list, depth_cutoff)
-                        bool2 = temp_graph2.check_for_subgraphs(
-                            subgraph_list, depth_cutoff)
-                        # Contradiction in both cases should return True
-                        if (bool1 and bool2):
-                            return True
-                        # If adding an edge creates a contradiction, add
-                        # a non-edge
-                        elif bool1:
-                            v.non_edges.append(edge)
-                            self.clean()
-                        # Converse case
-                        elif bool2:
-                            v.edges.append(edge)
-                            self.clean()
+                            #####Make another temporary graph with the appended non-edge #####
+                            temp_graph2 = copy.deepcopy(self)
+                            temp_graph2.vertex_list[vertex.index].non_edges.append(edge)
+                            temp_graph2.clean()
+                            temp_graph2.depth1=self.depth1+1 ####Need to increase the depth, so it doesn't recurse forever
+
+                            ##### Check both cases. If there is a contradiction in either case, return True #####
+                            bool1 = temp_graph.check_for_subgraphs(subgraph_list, depth_cutoff)
+                            bool2 = temp_graph2.check_for_subgraphs(subgraph_list, depth_cutoff)
+                            if (bool1 and bool2):
+                                return True
+                            ##### In this case, only and edge leads to a fork/triangle, so we append a non-edge #####
+                            elif bool1:
+                                vertex.non_edges.append(edge)
+                                self.clean()
+                            ##### In this case, an edge is added #####
+                            elif bool2:
+                                vertex.edges.append(edge)
+                                self.clean()
         return False
 
     def check_for_subgraphs_iter(self, subgraph_list, depth_cutoff=1):
-        """Runs .check_for_sugraphs() iteratively until the graph is no longer 
-        updated or .check_for_subgraphs() returns True.
-        
-        Args:
-            subgraph_list (list[graph]): List of forbidden subgraphs.
-            depth_cutoff (int): max recursion depth (default is 1)
-        
-        Returns:
-            bool: True if forbidden subgraph is found to exist in the graph, 
-                otherwise False.
-        """
-    
-        # Performance is generally better if, for higher depth_cutoffs, this 
-        # method is first run with a depth cutoff of 1
-        for i in sorted(list({1, depth_cutoff})): 
+        #####This method runs the prior check_for_sugraphs method iteratively until the graph is no longer updated #####
+        #####Like most methods, this returns True if there is a contradiction and False otherwise #####
+        for i in sorted(list({1, depth_cutoff})): #####For runtime reasons, I set the script to run at depth 1 first, then at the specified depth. Now, though, I usually just run the code with depth 1, so not sure this should be used.
             while True:
                 old_graph = copy.deepcopy(self)
                 bool1=self.check_for_subgraphs(subgraph_list, i)
                 if bool1:
                     return True
                 updated=False
-                for j, v in enumerate(old_graph.vertex_list):
-                    if ((v.edges != self.vertex_list[j].edges) or
-                            (v.non_edges != self.vertex_list[j].non_edges)):
+                for j, vertex in enumerate(old_graph.vertex_list):
+                    if (vertex.edges != self.vertex_list[j].edges) or (vertex.non_edges != self.vertex_list[j].non_edges):
                         updated = True
                 if not updated:
                     break
         return False
 
-    def clean_colors(self):
-        """Adds non-edges in accordance with the coloring of the graph.
-        """
-    
-        for tcolor in [0, 1, 2]:
+    def fill_in_graph(self, subgraph_list, depth_cutoff=1):
+        #####This method runs check_for_subgraphs_iter, as well as appending new neighbors where there is neighborhood containment. #####
+        #####I don't really use it currently, though, so I'm going to to go light on annotating it #####
+        while True:
+            old_graph = copy.deepcopy(self)
+            ##### Run check_for_forks_triangles_iter and check for updates #####
+            bool1 = self.check_for_subgraphs_iter(subgraph_list, depth_cutoff)
+            if bool1:
+                #print('Contradiction!')
+                return True
+            updated=False
+            for j, vertex in enumerate(old_graph.vertex_list):
+                if (vertex.edges != self.vertex_list[j].edges) or (vertex.non_edges != self.vertex_list[j].non_edges):
+                    updated = True
+
+            ##### Append vertices if there is neighborhood containment ######
+            for vertex1 in self.vertex_list:
+                for vertex2 in self.vertex_list:
+                    if ((vertex1.index != vertex2.index) and (len(vertex1.unknown) ==0) and (set(vertex1.edges).issubset(set(vertex2.edges)))):
+                        if (vertex1.max_degree == None) or ((vertex1.max_degree != None) and (len(vertex1.edges) < vertex1.max_degree)):
+                            new_vertex=vert([vertex1.index], [vertex2.index], max(self.index_list) + 1)
+                            self.vertex_list.append(new_vertex)
+                            self.clean()
+                            #print('New vertex added!')
+                            updated=True
+                        elif ((vertex1.max_degree != None) and (len(vertex1.edges) >= vertex1.max_degree)):
+                            #print('Contradiction!')
+                            return True
+            if not updated:
+                break
+        return False
+
+    def clean_colors(self): #####Adds non-edges according to the coloring of the graph #####
+        for color in [0, 1, 2]:
             index_list=[]
-            for v in self.vertex_list:
-                if v.color==tcolor:
-                    v.non_edges = list(set(v.non_edges + index_list))
-                    index_list.append(v.index)
+            for vertex in self.vertex_list:
+                if vertex.color==color:
+                    vertex.non_edges = list(set(vertex.non_edges + index_list))
+                    index_list.append(vertex.index)
         self.clean()
 
     def color_vert(self, start_vert):
-        """Attempts to color a single vertex.
-        
-        Args:
-            start_vert (int): index of the vertex to be colored
-        
-        Returns:
-            bool: True if vertex with index start_vert is not color_start and 
-                is unable to be colored, else False.
-        """
-        
+        #####This method attempts to color a single vertex #####
         color_list = []
         uncolored_neighbors = []
-        v0=self.vertex_list[start_vert]
-        # Look at neighbors to make a list of colors and uncolored neighbors.
-        for neighbor in v0.edges:
+        start_vertex=self.vertex_list[start_vert]
+
+        #####Make the list of colors of neighbors, and indices of uncolored neighbors ########
+        for neighbor in start_vertex.edges:
             vertex = self.vertex_list[neighbor]
             if vertex.color != None:
                 color_list.append(vertex.color)
@@ -673,196 +662,121 @@ class graph:
                 uncolored_neighbors.append(vertex.index)
         color_list = list(set(color_list))
 
-        # Color v0, if uncolored 
-        if (len(color_list) == 3) and (v0.color_start==False):
+        ######Color start_vertex, if uncolored #########
+        if (len(color_list) == 3) and (start_vertex.color_start==False):
             #print('Contradiction!')
             return True
-        if (len(color_list) == 2) and (v0.color_start==False):
-            if v0.color == None:
-                v0.color = list(set([0, 1, 2]) - set(color_list))[0]
-            elif (v0.color != list(set([0, 1, 2]) - set(color_list))[0]):
+        if (len(color_list) == 2) and (start_vertex.color_start==False):
+            if start_vertex.color == None:
+                start_vertex.color = list(set([0, 1, 2]) - set(color_list))[0]
+            elif (start_vertex.color != list(set([0, 1, 2]) - set(color_list))[0]):
                 return True
 
-        # If v0 is the first vertex being colored and it is degree 3, color 
-        # all its neighbors with different colors. 
-        if v0.color_start==True:
-            if ((v0.max_degree ==3) and len(v0.edges)==3 and 
-                    (all([w.color==None for w in self.vertex_list]))):
+        #######If it is the first vertex being colored and it is degree 3, color all its neighbors with different colors #######
+        if start_vertex.color_start==True:
+            if (start_vertex.max_degree ==3) and len(start_vertex.edges)==3 and (all([vertex.color==None for vertex in self.vertex_list])):
                 i=0
-                for neighbor in v0.edges:
+                for neighbor in start_vertex.edges:
                     self.vertex_list[neighbor].color=i
                     i=i+1
 
-        # Fix up the graph (non-edges) after adding new colors. 
+        ########Fix up the graph (non-edges) after adding new colors #########
         self.clean_colors()
         return False
 
     def fill_in_colors(self, start_vert=None):
-        """Iteratively updates the colors of vertices in the graph as much as 
-        possible, running .color_vert() on all of the vertices in the graph.
-        
-        Args:
-            start_vert (int): if included, indicates the index of the vertex
-                that cannot be colored (.color_start will be set to True). 
-                Default is None.
-        
-        Returns:
-            bool: True if .color_vert() returns True for some vertex, else 
-                False.
-        """
+        #####This method fills in a partial coloring of the graph, starting from start_vert, and assuming that start_vert cannot be colored.#####
+        #####can be run with start_vert=None to just update colors for the graph #######
+        #####Color neighborhood of starting vertex ##########
 
-        # Set color_start to True for the start_vert (if not None)
         if start_vert !=None:
             vertex=self.vertex_list[start_vert]
             vertex.color_start = True
             if self.color_vert(start_vert)==True:
                 return True
 
-        # Iteratively add colors for the rest of the graph 
+        ######Iteratively add colors for the rest of the graph ########
         while True:
             old_graph = copy.deepcopy(self)
-            # Color the vertex while also checking for a contradiction 
-            for v in self.vertex_list:
-                if self.color_vert(v.index)==True:
+            #####Color the vertex while also checking for a contradiction #####
+            for vertex in self.vertex_list:
+                if self.color_vert(vertex.index)==True:
                     return True
-            # Check for updates
+            #####Check for updates
             updated =False
-            for v1 in self.vertex_list:
-                if v1.color != old_graph.vertex_list[v1.index].color:
+            for vertex1 in self.vertex_list:
+                if vertex1.color != old_graph.vertex_list[vertex1.index].color:
                     updated=True
             if not updated:
                 break
         return False
 
     def fill_in_colors2(self, subgraph_list, start_vert=None):
-        """Heavier, more powerful version of .fill_in_colors() imbued with the 
-        logic of forbidden-subgraph case-checking. Not typically used for 
-        runtime reasons.
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs.
-            start_vert (int): if included, indicates the index of the vertex
-                that cannot be colored (.color_start will be set to True).
-                Default is None.
-        
-        Returns:
-            bool: True if .color_vert() returns True for some vertex, or
-                there is a contradiction in all cases generated by an 
-                edgelist, else False.
-        """
-        
+        #####Heavier, more powerful version of fill_in_colors imbued with the logic of forbidden-subgraph case-checking #####
         while True:
-            # First fill in colors normally and get the edgelists
+            #####First fill in colors normally, then get the edge lists implied by the subgraph_list
             if self.fill_in_colors(start_vert):
                 return True
             old_graph = copy.deepcopy(self)
             edge_lists = self.get_edgelists(subgraph_list)
             for edge_list in edge_lists:
-                # reset the color_lists 
-                for v in self.vertex_list:
-                    if v.color==None:
-                        v.clist=[]
-                # Iterate over the edges and check their possibilities
+                #####reset the color_lists#####
+                for vertex in self.vertex_list:
+                    if vertex.color==None:
+                        vertex.color_list=[]
+                #####Iterate over the edges and check their possibilities
                 for set1 in edge_list:
                     edge = list(set1)
-                    tgraph=copy.deepcopy(self)
-                    tgraph.depth0+=1
-                    tgraph.vertex_list[edge[0]].edges.append(edge[1])
-                    tgraph.clean()
-                    if tgraph.update_graph(subgraph_list):
+                    temp_graph=copy.deepcopy(self)
+                    temp_graph.depth0+=1
+                    temp_graph.vertex_list[edge[0]].edges.append(edge[1])
+                    temp_graph.clean()
+                    if temp_graph.update_graph(subgraph_list):
                         continue
-                    # Append any newly deduced colors to a list
-                    for v in self.vertex_list:
-                        if v.color!=None:
-                            continue
-                        if (tgraph.vertex_list[v.index].color != None):
-                            v.clist.append(tgraph.vertex_list[v.index].color)
-                        else:
-                            v.clist.append(-1)
-                for v in self.vertex_list:
-                    # Contradiction in all cases
-                    if (v.color==None) and (len(v.clist)==0):
-                        return True
-                    # Conly case is an update to the color of the vertex
-                    if ((v.color==None) and (-1 not in v.clist) and 
-                            (len(set(v.clist))==1)):
-                        v.color = v.clist[0]
-            # Check for updates
+                    #####Append any newly deduced colors to a list
+                    for vertex in self.vertex_list:
+                        if (vertex.color == None) and (temp_graph.vertex_list[vertex.index].color != None):
+                            vertex.color_list.append(temp_graph.vertex_list[vertex.index].color)
+                        elif (vertex.color == None) and (temp_graph.vertex_list[vertex.index].color == None):
+                            vertex.color_list.append(-1)
+                for vertex in self.vertex_list:
+                    if (vertex.color==None) and (-1 not in vertex.color_list) and (len(set(vertex.color_list))==1):
+                        vertex.color = vertex.color_list[0]
+            ###Check for updates
             updated =False
-            for v in self.vertex_list:
-                if v.color != old_graph.vertex_list[v.index].color:
+            for vertex in self.vertex_list:
+                if vertex.color != old_graph.vertex_list[vertex.index].color:
                     updated=True
             if not updated:
                 break
 
     def update_graph(self, subgraph_list, start_vert=None, with_colors=True):
-        """Updates colors and structure (edges and non-edges) of the graph
-        as much as possible using .fill_in_colors() and 
-        .check_for_subgraphs_iter().
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs.
-            start_vert (int): if included, start_vert index to be passed to 
-                .fill_in_colors() (default is None)
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (Default is True).
-        
-        Returns:
-            bool: True if .fill_in_colors() or .check_for_subgraphs_iter() 
-                returns True at any point, else False.
-        """
-
+        ###Lightweight graph update function that fills in colors and checks for subgraphs without doing the heavier methods that incur longer runtime
         while True:
             old_graph = copy.deepcopy(self)
-            # Can set depth threshold to 1 to enable fill_in_colors2 
-            # in graph updates.
+            ### can set depth threshold to 1 to enable fill_in_colors2 in graph updates.
             if with_colors and self.depth0<0: 
-                if (self.fill_in_colors2(subgraph_list, start_vert) or 
-                        self.check_for_subgraphs_iter(subgraph_list)):
+                if self.fill_in_colors2(subgraph_list, start_vert) or self.check_for_subgraphs_iter(subgraph_list):
                     return True
             elif with_colors:
-                if (self.fill_in_colors(start_vert) or 
-                        self.check_for_subgraphs_iter(subgraph_list)):
+                if self.fill_in_colors(start_vert) or self.check_for_subgraphs_iter(subgraph_list):
                     return True
             else:
                 if self.check_for_subgraphs_iter(subgraph_list):
                     return True
             updated =False
-            for v in self.vertex_list:
-                v_old=old_graph.vertex_list[v.index]
-                if ((v.color != v_old.color) or
-                        (set(v.edges) != set(v_old.edges)) or
-                        (set(v.non_edges) != set(v_old.non_edges))):
+            for vertex in self.vertex_list:
+                if ((vertex.color != old_graph.vertex_list[vertex.index].color) or
+                    (set(vertex.edges) != set(old_graph.vertex_list[vertex.index].edges)) or
+                    (set(vertex.non_edges) != set(old_graph.vertex_list[vertex.index].non_edges))
+                   ):
                     updated=True
             if not updated:
                 break
         return False
 
-    def update_graph2(self, subgraph_list, start_vert=None, verbose=False, 
-            with_colors=True):
-        """Updates colors and structure (edges and non-edges) of the graph
-        as much as possible by taking the edgelists from .get_edgelists() and,
-        for each edgelist, creating a temporary graph for each edge in the
-        edgelist, adding the edge to the temporary graph, running 
-        .update_graph(), and adding any edges/non_edges that are present in
-        all cases that don't return True (a contradiction). If all cases 
-        return True, True is returned overall. 
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs.
-            start_vert (int): if included, start_vert index to be passed to 
-                .fill_in_colors() (default is None)
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (Default is True).
-        
-        Returns:
-            bool: True if .update_graph() returns a contradiction, or if a 
-                contradiction occurs in all cases implied by an edgelist,
-                else False.
-        """
-        
+    def update_graph2(self, subgraph_list, max_depth, start_vert=None, current_depth=0, verbose=False, with_colors=True):
+        #####This graph should append edges from the lists produced by forks, then get all structure forced by coloring/forks/triangles, then recurse up to max_depth and append all structure that holds in all cases#####
         while True:
             if self.update_graph(subgraph_list, start_vert, with_colors):
                 return True
@@ -876,53 +790,55 @@ class graph:
             for i, edge_list in enumerate(edge_lists):
                 if verbose:
                     print('Completion={:8.2f}%'.format(100*i/len(edge_lists)))
-                # Reset the graph_list
+                #print(edge_list)
+                #####reset the graph_list#####
                 graph_list=[]
-                # Iterate over the edges and check their possibilities
+                #####Iterate over the edges and check their possibilities
                 for set1 in edge_list:
                     edge = list(set1)
-                    tgraph=copy.deepcopy(self)
-                    tgraph.vertex_list[edge[0]].edges.append(edge[1])
-                    tgraph.clean()
-                    if tgraph.update_graph(subgraph_list, start_vert, 
-                            with_colors):
+                    temp_graph=copy.deepcopy(self)
+                    temp_graph.vertex_list[edge[0]].edges.append(edge[1])
+                    temp_graph.clean()
+                    if temp_graph.update_graph(subgraph_list, start_vert, with_colors):
                         continue
-                    graph_list.append(tgraph)
-                # Indicates there was a contradiction in all possible cases 
+                    #####Recurse if less than max_depth
+                    #####recursion temporarily removed for runtime reasons
+                    #if current_depth < max_depth-1:
+                        #if temp_graph.update_graph2(subgraph_list, max_depth, start_vert, current_depth+1):
+                            #continue
+                    graph_list.append(temp_graph)
+                #####This indicates there was a contradiction in all possible cases #####
                 if len(graph_list)==0:
                     return True
                 else:
-                    for v in self.vertex_list:
-                        # Update colors 
-                        if with_colors and v.color==None:
-                            v.clist=[]
-                            for tgraph in graph_list:
-                                v_temp=tgraph.vertex_list[v.index]
-                                if v_temp.color ==None:
-                                    v.clist.append(-1)
+                    for vertex in self.vertex_list:
+                        #####Update colors #####
+                        if with_colors and vertex.color==None:
+                            vertex.color_list=[]
+                            for temp_graph in graph_list:
+                                if temp_graph.vertex_list[vertex.index].color ==None:
+                                    vertex.color_list.append(-1)
                                 else:
-                                    v.clist.append(v_temp.color)
-                            if (-1 not in v.clist) and (len(set(v.clist))==1):
-                                v.color=v.clist[0]
+                                    vertex.color_list.append(temp_graph.vertex_list[vertex.index].color)
+                            if (-1 not in vertex.color_list) and (len(set(vertex.color_list))==1):
+                                vertex.color=vertex.color_list[0]
                                 updated=True
-                        # Update Edges 
-                        for index1 in v.unknown:
+                        #####Update Edges #####
+                        for index1 in vertex.unknown:
                             edge_list=[]
-                            for tgraph in graph_list:
-                                v_temp=tgraph.vertex_list[v.index]
-                                if index1 in v_temp.edges:
+                            for temp_graph in graph_list:
+                                if index1 in temp_graph.vertex_list[vertex.index].edges:
                                     edge_list.append(1)
-                                elif index1 in v_temp.non_edges:
+                                elif index1 in temp_graph.vertex_list[vertex.index].non_edges:
                                     edge_list.append(-1)
                                 else:
                                     edge_list.append(0)
-                            if ((len(set(edge_list))==1) and 
-                                    (0 not in edge_list)):
+                            if (len(set(edge_list))==1) and (0 not in edge_list):
                                 if edge_list[0] ==1:
-                                    v.edges.append(index1)
+                                    vertex.edges.append(index1)
                                     updated=True
                                 else:
-                                    v.non_edges.append(index1)
+                                    vertex.non_edges.append(index1)
                                     updated=True
                 self.clean()
             if updated and verbose:
@@ -931,167 +847,116 @@ class graph:
                 break
         return False
 
-    def update_graph2_2(self, subgraph_list, max_depth=1, verbose=False, 
-            with_colors=True, min_subgraph=None):
-        """Extension of .update_graph2() that supports (optionally) obtaining 
-        structure/contradictions through adding vertices that are forced 
-        through the assumption that a choice of subgraph in the graph has a 
-        minimal number of vertices distance 2 from this copy of the subgraph. 
-        If a min_subgraph argument is passed, the code requires that the graph 
-        is formatted such that the vertices with the smallest indices in the 
-        graph correspond to the minimal subgraph. Can recurse (to add multiple 
-        vertices forced in this way). If min_subgraph=None, will be the same 
-        as update_graph2().
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs.
-            max_depth (int): Max recursion depth; ie, number of vertices it 
-                can try to add at a time to seek structure/contradictions 
-                (default is 1). 
-            start_vert (int): if included, start_vert index to be passed to 
-                .fill_in_colors() (default is None)
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (Default is True).
-            min_subgraph (graph): subgraph such that the first 
-                len(min_subgraph.vertex_list) vertices in the graph are a 
-                copy of this subgraph, and is assumed to be a choice of 
-                this subgraph in the graph such that the number of vertices
-                of distance exactly 2 is minimal (default is None).
-        
-        Returns:
-            bool: True if .update_graph2() returns a contradiction, or if a 
-                contradiction occurs in all cases implied by a min_subgraph,
-                else False.
-        """
+    def update_graph2_2(self, subgraph_list, max_depth=1, verbose=False, with_colors=True, min_subgraph=None):
+        ###Modified version of update_graph2 that (optionally) supports obtaining structure/contradictions through adding vertices that are forced through minimal 5-cycle arguments.
+        ###If a min_subgraph argument is passed, the code requires that the graph is formatted such that the vertices with the smallest indices in the graph correspond to the minimal subgraph.
 
         if min_subgraph != None:
             min_indices=[i for i in range(len(min_subgraph.vertex_list))]
 
         while True:
-            # First run update_graph2
-            if self.update_graph2(subgraph_list, start_vert=None, 
-                    verbose=verbose, with_colors=with_colors):
+            ###First run update_graph2
+            if self.update_graph2(subgraph_list, max_depth, start_vert=None, current_depth=0, verbose=verbose, with_colors=with_colors):
                 return True
-            # At this point, there is no specificed min C_5, we are done.
+            ###at this point, there is no specificed min C_5, we are done.
             if min_subgraph==None or self.depth3>=max_depth:
                 return False
-            # Otherwise, we obtain a list of 5-cycles and compute a list of 
-            # vertices distance 2 from min_indices
+            ###otherwise, we obtain a list of 5-cycles and compute a list of vertices distance 2 from min_indices for iteration purposes
             subgraphs=self.get_subgraph_list(min_subgraph)
             edgelists=self.get_edgelists(subgraph_list)
             dist_two_verts=[]
             for v in self.vertex_list:
-                # Check first that distance is at least 2 from min_indices
+                ###check first that distance is at least 2 from min_indices
                 if set(min_indices).issubset(set(v.non_edges)):
-                    # Now, check that distance is at most 2 from min_indices
+                    ###Now, check that distance is at most 2 from min_indices
                     for w in v.edges:
-                        w_edges=set(self.vertex_list[w].edges)
-                        if len(w_edges.intersection(set(min_indices)))>0:
+                        if len(set(self.vertex_list[w].edges).intersection(set(min_indices)))>0:
                             dist_two_verts.append(v.index)
                             break
             updated=False
             if verbose:
                 print("Subgraphs: {}".format(subgraphs))
+                #print("Edgelists: {}".format(edgelists))
                 print("dist_two_verts: {}".format(dist_two_verts))
-            # Iterate over our subgraph list for vertices to add
+            ###iterate over our subgraph list, searching for forced structure we can use to seek contradiction or updates.
             for tset in subgraphs:
-                # Check if there are any vertices in dist_two_verts adjacent 
-                # to a vertex in the subgraph
+                ###check if there are any vertices in dist_two_verts adjacent to a vertex in the subgraph
                 if verbose:
                     print('Checking subgraph {}'.format(list(tset)))
                 d2count=0
                 for index in dist_two_verts:
-                    t_edges=set(self.vertex_list[index].edges)
-                    if len(t_edges.intersection(tset))>0:
+                    if len(set(self.vertex_list[index].edges).intersection(tset))>0:
                         d2count+=1
-                # Now, need to subtract from d2count for each vertex adjacent 
-                # (or potentially adjacent) to min_indices but not tset
+                ###Now, need to subtract from the sum for each vertex adjacent (or potentially adjacent) to min_indices but not adjacent to tset
                 for v in self.vertex_list:
-                    min_indices_only=set(min_indices)-tset
-                    v_pos_edges=set(v.edges+v.unknown)
-                    if (len(min_indices_only.intersection(v_pos_edges))>0 and 
-                            len(tset.intersection(set(v.edges)))==0):
-                        # Check first if an edge between v and tset is implied 
-                        # by the edgelists of the graph
+                    if len((set(min_indices)-tset).intersection(set(v.edges+v.unknown)))>0 and len(tset.intersection(set(v.edges)))==0:
+                        ###check first if an edge between v and tset is implied by the edgelists of the graph
                         exists_edge=False
                         for tlist in edgelists:
-                            # Check that v is in all edges, and that all edges 
-                            # are to tset within the edge list. If that is 
-                            # true, v must be adjacent to tset, even though no 
-                            # particular edge is forced at the moment.
-                            if (all([v.index in pair for pair in tlist]) and 
-                                set([list(pair-{v.index})[0] for pair in tlist]
-                                   ).issubset(tset)):
+                            ###check that v is in all edges, and that all edges are to tset within the edge list. If that is true, v must be adjacent to tset, even though no particular edge is forced at the moment.
+                            if all([v.index in pair for pair in tlist]) and set([list(pair-{v.index})[0] for pair in tlist]).issubset(tset):
                                 exists_edge=True
                                 break
                         if not exists_edge:
                             d2count-=1
-                # If d2count>0, then min_indices does not have the minimal 
-                # number of vertices distance 2
+                ###If d2count>0, then min_indices does not have the minimal number of vertices distance 2
                 if verbose:
                     print('d2count:{}'.format(d2count))
                 if d2count<=0:
                     continue
-                # Now, iterate over possible ways to add a vertex to make 
-                # min_indices minimal again
+                ###Now, iterate over possible ways to add a vertex to G to make min_indices minimal again
                 graph_list=[]
-                for idx in set(min_indices)-tset:
-                    tgraph=copy.deepcopy(self)
-                    tgraph.depth3+=1
-                    # Add a vertex adjacent to index and non-adjacent to tset
-                    new_vert=vert([idx], list(tset), len(tgraph.vertex_list))
-                    tgraph.vertex_list.append(new_vert)
-                    tgraph.clean()
-                    if tgraph.update_graph2_2(subgraph_list, verbose=False, 
-                            with_colors=with_colors, min_subgraph=min_subgraph):
+                for index in set(min_indices)-tset:
+                    temp_graph=copy.deepcopy(self)
+                    temp_graph.depth3+=1
+                    ###add a vertex adjacent to index and non-adjacent to tset
+                    new_vert=vert([index], list(tset), len(temp_graph.vertex_list))
+                    temp_graph.vertex_list.append(new_vert)
+                    temp_graph.clean()
+                    if temp_graph.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph):
                         if verbose:
-                            print('{}: True'.format(idx))
+                            print('{}: True'.format(index))
                         continue
                     if verbose:
-                        print('{}: False'.format(idx))
-                    graph_list.append(tgraph)
+                        print('{}: False'.format(index))
+                        #temp_graph.show()
+                    graph_list.append(temp_graph)
 
-                # Now we add any structure to the graph and check for updates
+                ###Now we add any structure to the graph and check for updates
                 if len(graph_list)==0:
                     return True
 
-                for v in self.vertex_list:
-                    # Update colors 
-                    if with_colors and v.color==None:
-                        v.clist=[]
-                        for tgraph in graph_list:
-                            v_temp=tgraph.vertex_list[v.index]
-                            if v_temp.color ==None:
-                                v.clist.append(-1)
+                for vertex in self.vertex_list:
+                    #####Update colors #####
+                    if with_colors and vertex.color==None:
+                        vertex.color_list=[]
+                        for temp_graph in graph_list:
+                            if temp_graph.vertex_list[vertex.index].color ==None:
+                                vertex.color_list.append(-1)
                             else:
-                                v.clist.append(v_temp.color)
-                        if (-1 not in v.clist) and (len(set(v.clist))==1):
-                            v.color=v.clist[0]
+                                vertex.color_list.append(temp_graph.vertex_list[vertex.index].color)
+                        if (-1 not in vertex.color_list) and (len(set(vertex.color_list))==1):
+                            vertex.color=vertex.color_list[0]
                             updated=True
-                    # Update Edges 
-                    for index1 in v.unknown:
+                    #####Update Edges #####
+                    for index1 in vertex.unknown:
                         edge_list=[]
-                        for tgraph in graph_list:
-                            v_temp=tgraph.vertex_list[v.index]
-                            if index1 in v_temp.edges:
+                        for temp_graph in graph_list:
+                            if index1 in temp_graph.vertex_list[vertex.index].edges:
                                 edge_list.append(1)
-                            elif index1 in v_temp.non_edges:
+                            elif index1 in temp_graph.vertex_list[vertex.index].non_edges:
                                 edge_list.append(-1)
                             else:
                                 edge_list.append(0)
-                        if ((len(set(edge_list))==1) and 
-                                (0 not in edge_list)):
+                        if (len(set(edge_list))==1) and (0 not in edge_list):
                             if edge_list[0] ==1:
-                                v.edges.append(index1)
+                                vertex.edges.append(index1)
                                 self.clean()
                                 updated=True
                             else:
-                                v.non_edges.append(index1)
+                                vertex.non_edges.append(index1)
                                 self.clean()
                                 updated=True
-                                
             if verbose and updated:
                 self.show()
                 print('Updated (from minimal subgraph); running again...')
@@ -1099,40 +964,16 @@ class graph:
                 break
         return False
 
-    def update_graph3(self, subgraph_list, verbose=False, with_colors=True, 
-            min_subgraph=None, max_depth=1):
-        """Heavier graph update function, capturing more structure by checking 
-        every unknown vertex pair to see if adding it as an edge/non-edge will 
-        obtain a contradiction with .update_graph2_2().
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs. 
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (default is True).
-            min_subgraph (graph): subgraph such that, if specified, the first 
-                len(min_subgraph.vertex_list) vertices in the graph are a 
-                copy of this subgraph, and is assumed to be a choice of 
-                this subgraph in the graph such that the number of vertices
-                of distance exactly 2 is minimal (default is None).
-            max_depth (int): Max recursion depth argument to be passed to 
-                .update_graph2_2() (default is 1)
-        
-        Returns:
-            bool: True if a contradiction is forced in some case, else
-                False.
-        """
-        # Stores the index of the last visited vertex, so that as the graph 
-        # is updated, vertice can be visited in a cyclical pattern.
-        stored_index=0 
+    def update_graph3(self, subgraph_list, verbose=False, with_colors=True, min_subgraph=None, max_depth=1):
+        ###Heavier graph update function, checking every unknown edge to see if adding it as an edge/non-edge will obtain a contradiction with update_graph2_2()
+
+        stored_index=0 ###Stores the index of the last visited vertex, so that as the graph is updated, vertice can be visited in a cyclical pattern.
 
         while True:
             if verbose:
                 print('Setting up and and initial greedy updates...')
-            # Update first with update_graph2_2
-            if self.update_graph2_2(subgraph_list, max_depth, verbose=False, 
-                    with_colors=with_colors, min_subgraph=min_subgraph):
+            ###Update graph with update_graph2_2 first, and again after adding any edge/non_edge
+            if self.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph):
                 if verbose:
                     print('Contradiction obtained in initial updates.')
                     self.show()
@@ -1140,124 +981,75 @@ class graph:
             if verbose:
                 self.show()
 
-            # Count number of unknown vertex pairs for printing progress
+            ###count number of unknown edge/non_edges in the graph, for progress printing purposes.
             if verbose:
                 unknown_count=0
                 for vertex in self.vertex_list:
                     for v2_index in vertex.unknown:
                         if v2_index>vertex.index:
                             unknown_count+=1
-                print('There are {} unknown edges'.format(unknown_count)
-                    + ' in the graph to check')
+                print('There are {} unknown edges in the graph to check'.format(unknown_count))
 
             updated=False
             j=0
             for i in range(len(self.vertex_list)):
-                # Picks up from where the last iteration left off
-                v=self.vertex_list[(stored_index+i)%len(self.vertex_list)]
-                # Want to exit and restart whenever an update occurs.
-                if updated or len(v.unknown) == 0:
-                    continue
-                for edge in v.unknown:
-                    if updated or edge < v.index:
-                        continue
-                    if verbose:
-                        completion=100*j/unknown_count
-                        print('Checking {}<->{}.'.format(v.index, edge)
-                        + ' Completion: {:8.2f}%'.format(completion))
-                    j+=1
-                    # Make a temporary graph with the appended edge 
-                    tgraph = copy.deepcopy(self)
-                    tgraph.vertex_list[v.index].edges.append(edge)
-                    tgraph.clean()
+                vertex=self.vertex_list[(stored_index+i)%len(self.vertex_list)] ###picks up from where the last iteration left off, roughly
+                if not updated and len(vertex.unknown) > 0:
+                    for edge in vertex.unknown:
+                        if not updated and edge > vertex.index: #####Prevents running each case twice, to cut down the runtime #####
+                            if verbose:
+                                print('Checking {}<->{}. Completion: {:8.2f}%'.format(vertex.index, edge, 100*j/unknown_count))
+                            j+=1
+                            #####Make a temporary graph with the appended edge#####
+                            temp_graph = copy.deepcopy(self)
+                            temp_graph.vertex_list[vertex.index].edges.append(edge)
+                            temp_graph.clean()
 
-                    # Make another temporary graph with the appended non-edge 
-                    tgraph2 = copy.deepcopy(self)
-                    tgraph2.vertex_list[v.index].non_edges.append(edge)
-                    tgraph2.clean()
+                            #####Make another temporary graph with the appended non-edge #####
+                            temp_graph2 = copy.deepcopy(self)
+                            temp_graph2.vertex_list[vertex.index].non_edges.append(edge)
+                            temp_graph2.clean()
 
-                    # Check both cases for a contradiction
-                    bool1 = tgraph.update_graph2_2(subgraph_list, max_depth, 
-                            verbose=False, with_colors=with_colors, 
-                            min_subgraph=min_subgraph)
-                    bool2 = tgraph2.update_graph2_2(subgraph_list, max_depth, 
-                            verbose=False, with_colors=with_colors, 
-                            min_subgraph=min_subgraph)
-                    if (bool1 and bool2):
-                        if verbose:
-                            print('Contradiction obtained when testing unknown' 
-                                + ' edge/non-edge between' 
-                                + ' {} and {}!'.format(v.index, edge))
-                        return True
-                    # In this case, we append a non-edge
-                    elif bool1:
-                        if verbose:
-                            print('Non-edge added from' 
-                                + ' {} to {};'.format(v.index, edge)
-                                + ' starting over.')
-                        v.non_edges.append(edge)
-                        self.clean()
-                        stored_index=v.index
-                        updated=True
-                    # In this case, an edge is added 
-                    elif bool2:
-                        if verbose:
-                            print('Edge added from'
-                                + ' {} to {};'.format(v.index, edge)
-                                + ' starting over.')
-                        v.edges.append(edge)
-                        self.clean()
-                        stored_index=v.index
-                        updated=True
+                            ##### Check both cases. If there is a contradiction in either case, return True #####
+                            bool1 = temp_graph.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph)
+                            bool2 = temp_graph2.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph)
+                            if (bool1 and bool2):
+                                if verbose:
+                                    print('Contradiction obtained when testing unknown edge/non-edge between {} and {}!'.format(vertex.index, edge))
+                                return True
+                            ##### In this case, only and edge leads to a fork/triangle, so we append a non-edge #####
+                            elif bool1:
+                                if verbose:
+                                    print('Non-edge added from {} to {}; starting over.'.format(vertex.index, edge))
+                                vertex.non_edges.append(edge)
+                                self.clean()
+                                stored_index=vertex.index
+                                updated=True
+                            ##### In this case, an edge is added #####
+                            elif bool2:
+                                if verbose:
+                                    print('Edge added from {} to {}; starting over.'.format(vertex.index, edge))
+                                vertex.edges.append(edge)
+                                self.clean()
+                                stored_index=vertex.index
+                                updated=True
             if not updated:
                 break
         return False
 
-    def update_graph4(self, subgraph_list, verbose=False, with_colors=True, 
-            min_subgraph=None, max_depth=1, max_new_vertices=None):
-        """Extension of update_graph3() that will also attempt to add new
-        vertices to the graph that are forced to exist by neighborhood 
-        containment (an the assumption that the graph is a minimal 
-        counterexample) as well as (optionally) new vertices forced to exist
-        by the assumption that the first len(min_subgraph.vertex_list) vertices 
-        in the graph are a choice of min_subgraph such that the number of
-        vertices distance 2 is minimal as well as updating.
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs. 
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (Default is True).
-            min_subgraph (graph): subgraph such that, if specified, the first 
-                len(min_subgraph.vertex_list) vertices in the graph are a 
-                copy of this subgraph, and is assumed to be a choice of 
-                this subgraph in the graph such that the number of vertices
-                of distance exactly 2 is minimal (default is None).
-            max_depth (int): Max recursion depth argument to be passed to 
-                .update_graph2_2() (default is 1).
-            max_new_vertices (int): If specified, will put a maximum on the 
-                number of new vertices that can be added to the graph 
-                (default is None).
-            
-        
-        Returns:
-            bool: True if a contradiction is forced in some case, else
-                False.
-        """
-
+    def update_graph4(self, subgraph_list, verbose=False, with_colors=True, min_subgraph=None, max_depth=1, max_new_vertices=None):
+        ###heavier graph update function, checking every unknown edge to see if adding it as an edge/non-edge will obtain a contradiction with update_graph2_2()
+        ###also checks if it is possible to add new vertices to the graph that are forced by neighborhood containment.
         new_vert_count=0
         exit=False
         while True:
             updated=False
-            if self.update_graph3(subgraph_list, verbose, with_colors, 
-                    min_subgraph=min_subgraph, max_depth=max_depth):
+            if self.update_graph3(subgraph_list, verbose, with_colors, min_subgraph=min_subgraph, max_depth=max_depth):
                 return True
-
-            # If min_subgraph is set, try to add vertices forced by choice of 
-            # minimal subgraph first.
+            
+            ###if min_subgraph is set, try to add vertices forced by choice of minimal subgraph first
             if min_subgraph != None and not exit:
-                # Setup
+                ###setup
                 min_indices=[i for i in range(len(min_subgraph.vertex_list))]
                 subgraphs=self.get_subgraph_list(min_subgraph)
                 edgelists=self.get_edgelists(subgraph_list)
@@ -1266,390 +1058,240 @@ class graph:
                     if set(min_indices).issubset(set(v.non_edges)):
                         dist_two_verts.append(v.index)
                 updated=False
-                
-                # Iterate over our subgraph list for vertices to add
+                ###iterate over our subgraph list, searching for forced structure we can use to seek contradiction or updates.
                 for tset in subgraphs:
                     if exit:
                         break
-                    # Check if there are any vertices in dist_two_verts adjacent 
-                    # to a vertex in the subgraph
+                    ###check if there are any vertices in dist_two_verts adjacent to a vertex in the subgraph
                     d2count=0
                     for index in dist_two_verts:
-                        t_edges=set(self.vertex_list[index].edges)
-                        if len(t_edges.intersection(tset))>0:
+                        if len(set(self.vertex_list[index].edges).intersection(tset))>0:
                             d2count+=1
-                            
-                    # Now, need to subtract from d2count for each vertex adjacent 
-                    # (or potentially adjacent) to min_indices but not tset
+                    ###Now, need to subtract from the sum for each vertex adjacent (or potentially adjacent) to min_indices but not adjacent to tset
                     for v in self.vertex_list:
-                        min_indices_only=set(min_indices)-tset
-                        v_pos_edges=set(v.edges+v.unknown)
-                        if (len(min_indices_only.intersection(v_pos_edges))>0 and 
-                                len(tset.intersection(set(v.edges)))==0):
-                            # Check first if an edge between v and tset is implied 
-                            # by the edgelists of the graph
+                        if len((set(min_indices)-tset).intersection(set(v.edges+v.unknown)))>0 and len(tset.intersection(set(v.edges)))==0:
+                            ###check first if an edge between v and tset is implied by the edgelists of the graph
                             exists_edge=False
                             for tlist in edgelists:
-                                # Check that v is in all edges, and that all edges 
-                                # are to tset within the edge list. If that is 
-                                # true, v must be adjacent to tset, even though no 
-                                # particular edge is forced at the moment.
-                                if (all([v.index in pair for pair in tlist]) and 
-                                    set([list(pair-{v.index})[0] for pair in tlist]
-                                       ).issubset(tset)):
+                                ###check that v is in all edges, and that all edges are to tset within the edge list. If that is true, v must be adjacent to tset, even though no particular edge is forced at the moment.
+                                if all([v.index in pair for pair in tlist]) and set([list(pair-{v.index})[0] for pair in tlist]).issubset(tset):
                                     exists_edge=True
                                     break
                             if not exists_edge:
                                 d2count-=1
-                    
-                    # If d2count>0, then min_indices does not have the minimal 
-                    # number of vertices distance 2
+                    ###If d2count>0, then min_indices does not have the minimal number of vertices distance 2
                     if d2count<=0:
                         continue
-                    # Now, iterate over possible ways to add a vertex to G to 
-                    # make min_indices minimal again
+                    ###Now, iterate over possible ways to add a vertex to G to make min_indices minimal again
                     index_list=[]
-                    for idx in set(min_indices)-tset:
-                        tgraph=copy.deepcopy(self)
-                        tgraph.depth3+=1
-                        # Add a vertex adjacent to idx and non-adjacent to tset
-                        new_idx=len(tgraph.vertex_list)
-                        new_vert=vert([idx], list(tset), new_idx)
-                        tgraph.vertex_list.append(new_vert)
-                        tgraph.clean()
-                        if tgraph.update_graph2_2(subgraph_list, max_depth, 
-                                verbose=False, with_colors=with_colors, 
-                                min_subgraph=min_subgraph):
+                    for index in set(min_indices)-tset:
+                        temp_graph=copy.deepcopy(self)
+                        temp_graph.depth3+=1
+                        ###add a vertex adjacent to index and non-adjacent to tset
+                        new_vert=vert([index], list(tset), len(temp_graph.vertex_list))
+                        temp_graph.vertex_list.append(new_vert)
+                        temp_graph.clean()
+                        if temp_graph.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph):
                             continue
-                        index_list.append(idx)
+                        index_list.append(index)
 
-                    # Now we return a contradiction or add a vertex if appropriate
+                    ###Now we return a contradiction or add a vertex if appropriate
                     if len(index_list)==0:
                         if verbose:
                             print('Min subgraph forced a contradiction.')
                         return True
                     if len(index_list)==1:
-                        new_idx=len(self.vertex_list)
                         if verbose:
-                            print('Vertex {} added adjacent'.format(new_idx)
-                                + ' to {} that cannot be'.format(index_list[0])
-                                + ' adjacent to {}.'.format(list(tset)))
-                        new_vert=vert([index_list[0]], list(tset), new_idx)
+                            print('Vertex {} added adjacent to {} that cannot be adjacent to {}'.format(len(self.vertex_list), index_list[0], list(tset)))
+                        new_vert=vert([index_list[0]], list(tset), len(self.vertex_list))
                         self.vertex_list.append(new_vert)
                         self.clean()
                         updated=True
-                        if self.update_graph2_2(subgraph_list, max_depth, 
-                                verbose=False, with_colors=with_colors, 
-                                min_subgraph=min_subgraph):
+                        if self.update_graph2_2(subgraph_list, max_depth, verbose=False, with_colors=with_colors, min_subgraph=min_subgraph):
                             return True
                         new_vert_count+=1
-                        if (max_new_vertices!=None and 
-                                new_vert_count>=max_new_vertices):
+                        if max_new_vertices!=None and new_vert_count>=max_new_vertices:
                             exit=True
-                            
-            # Next, check for vertices implied by neighborhood containment.
-            for v1 in self.vertex_list:
+                        
+                
+            ###next, check for vertices forced to exist by neighborhood containment.
+            for vertex1 in self.vertex_list:
                 if exit:
                     break
-                for v2 in self.vertex_list:
+                for vertex2 in self.vertex_list:
                     if exit:
-                        break 
-                    if (v1.index != v2.index and len(v1.unknown) ==0 and 
-                            set(v1.edges).issubset(set(v2.edges))):
-                        # Checking that we don't exceed max_degree
-                        if (v1.max_degree == None or (v1.max_degree != None and 
-                                len(v1.edges) < v1.max_degree)):
-                            new_idx=len(self.vertex_list)
-                            new_vert=vert([v1.index], [v2.index], new_idx)
-                            self.vertex_list.append(new_vert)
+                        break
+                    if ((vertex1.index != vertex2.index) and (len(vertex1.unknown) ==0) and (set(vertex1.edges).issubset(set(vertex2.edges)))):
+                        if (vertex1.max_degree == None) or ((vertex1.max_degree != None) and (len(vertex1.edges) < vertex1.max_degree)):
+                            new_vertex=vert([vertex1.index], [vertex2.index], max(self.index_list) + 1)
+                            self.vertex_list.append(new_vertex)
                             self.clean()
                             if verbose:
-                                print('Vertex {} added'.format(new_vert.index)
-                                    + ' adjacent to {} that'.format(v1.index)
-                                    + ' cannot be in N({})!'.format(v2.index))
+                                print('Vertex {} added adjacent to {} that cannot be in N({})! '.format(new_vertex.index, vertex1.index, vertex2.index))
                             updated=True
                             new_vert_count+=1
-                            if (max_new_vertices!=None and 
-                                    new_vert_count>=max_new_vertices):
+                            if max_new_vertices!=None and new_vert_count>=max_new_vertices:
                                 exit=True
-                        # If we would be forced to exceed max_degree, 
-                        # return True
-                        elif (v1.max_degree != None and 
-                                len(v1.edges) >= v1.max_degree):
+                        elif ((vertex1.max_degree != None) and (len(vertex1.edges) >= vertex1.max_degree)):
                             return True
             if not updated:
                 break
         return False
     
-    def update_graph_flexible(self, subgraph_list, update_speed, verbose=False, 
-            min_subgraph=None, with_colors=True, max_depth=1, max_new_vertices=None):
-        """Takes an input variable 'update_speed' to determine which graph 
-        update function to run, then runs that method.
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs. 
-            update_speed (str): Determines which graph update function to run. 
-                'fast' corresponds to .update_graph2_2(), 'medium' to 
-                .update_graph3(), and 'slow' to .update_graph4().
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            with_colors (bool): determines whether to update colors of 
-                vertices in the graph as well as structure (Default is True).
-            min_subgraph (graph): subgraph such that, if specified, the first 
-                len(min_subgraph.vertex_list) vertices in the graph are a 
-                copy of this subgraph, and is assumed to be a choice of 
-                this subgraph in the graph such that the number of vertices
-                of distance exactly 2 is minimal (default is None).
-            max_depth (int): Max recursion depth argument to be passed to 
-                .update_graph2_2() (default is 1).
-            max_new_vertices (int): If specified, will put a maximum on the 
-                number of new vertices that can be added to the graph 
-                (default is None).
-        
-        Returns:
-            bool: True if the graph update function return True, else False.
-        """
-        
+    def update_graph_flexible(self, subgraph_list, update_speed, verbose=False, min_subgraph=None, with_colors=True, max_depth=1, max_new_vertices=None):
+        ###can take an input parameter to determine with graph update function to run-mostly just to save repetitive lines of code.
         if update_speed=='fast':
-            if self.update_graph2_2(subgraph_list, max_depth, verbose=verbose, 
-                    with_colors=with_colors, min_subgraph=min_subgraph):
+            if self.update_graph2_2(subgraph_list, max_depth, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph):
                 return True
         elif update_speed=='medium':
-            if self.update_graph3(subgraph_list, verbose=verbose, 
-                    with_colors=with_colors, min_subgraph=min_subgraph, 
-                    max_depth=max_depth):
+            if self.update_graph3(subgraph_list, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph, max_depth=max_depth):
                 return True
         elif update_speed=='slow':
-            if self.update_graph4(subgraph_list, verbose=verbose, 
-                    with_colors=with_colors, min_subgraph=min_subgraph, 
-                    max_depth=max_depth, max_new_vertices=max_new_vertices):
+            if self.update_graph4(subgraph_list, verbose=verbose, with_colors=with_colors, min_subgraph=min_subgraph, max_depth=max_depth, max_new_vertices=max_new_vertices):
                 return True
     
-    def update_graph5(self, subgraph_list, add_vertices=True, 
-            update_speed='medium', max_distance=10, verbose=False, 
-            min_subgraph=None, check_deg_three=False, 
-            carg_update_speed='fast'):
-        """Updates the graph by searching for ways to obtain partial colorings
-        implied by the neighborhood of one vertex being contained in the 
-        neighborhood of two other vertices, then applying 
-        color_argument_iter(). If check_deg_three is set to true, it will also
-        check if vertices currently degree 3 must have new neighbors by
-        applying color_argument_iter().
-        
-        Args:
-            subgraph_list (list[graph]): list of forbidden subgraphs. 
-            add_vertices (bool): Determines if vertices may be added to the 
-                graph while the algorithm runs (default is True).
-            update_speed (str): Determines which graph update function to run
-                while checking for neighborhood containment. 'fast' corresponds 
-                to .update_graph2_2(), 'medium' to .update_graph3(), and 'slow'
-                to .update_graph4() (default is 'medium').
-            carg_update_speed (str): Determines which graph update function to 
-                run within color_argument_iter. 'fast', 'medium', and 'slow'
-                are options, same as update_speed (default is 'fast').
-            verbose (bool): determines whether to print detailed output about
-                progress and updates to the graph (default is False).
-            min_subgraph (graph): subgraph such that, if specified, the first 
-                len(min_subgraph.vertex_list) vertices in the graph are a 
-                copy of this subgraph, and is assumed to be a choice of 
-                this subgraph in the graph such that the number of vertices
-                of distance exactly 2 is minimal (default is None).
-            check_deg_three (bool): if True, will check if new neighbors are
-                forced for vertices in the graph that are currently degree 3
-                (default is False).
-            max_distance (int): max distance .color_argument() may recurse 
-                (default is 10).
-        
-        Returns:
-            bool: True if a contradiction is forced in all cases, else False.
-        """
+    def update_graph5(self, subgraph_list, add_vertices=True, update_speed='medium', max_distance=10, verbose=False, min_subgraph=None, check_deg_three=False, carg_update_speed='fast'):
+        ###update the graph and seek smart color argument updates in an automated fashion.
 
-        # First, we need to clear away any partial coloring in the graph
-        for v in self.vertex_list:
-            v.color=None
-            v.color_start=False
+        ###First, we need to clear away any partial coloring in the graph
+        for vertex in self.vertex_list:
+            vertex.color=None
+            vertex.color_start=False
 
         while True:
-            # Tun either update_graph3 or update_graph4 based on whether 
-            # adding vertices is allowed
+            ###run either update_graph3 or update_graph4 based on whether adding vertices is allowed
             if add_vertices:
-                if self.update_graph4(subgraph_list, verbose=verbose, 
-                        with_colors=False, min_subgraph=min_subgraph):
+                if self.update_graph4(subgraph_list, verbose=verbose, with_colors=False, min_subgraph=min_subgraph):
                     return True
             else:
-                if self.update_graph3(subgraph_list, verbose=verbose, 
-                        with_colors=False, min_subgraph=min_subgraph):
+                if self.update_graph3(subgraph_list, verbose=verbose, with_colors=False, min_subgraph=min_subgraph):
                     return True
 
-            # Now, search for pairs of vertices with neighborhood containment
+            ###now, search for pairs of vertices with neighborhood containment
             old_graph = copy.deepcopy(self)
 
-            for v1, v2, v3 in combinations(self.vertex_list, 3):
-                # Check that that N(v1) < N(v2) \cup N(v3)
-                pos_edges=set(v1.edges+v1.unknown)
-                if not pos_edges.issubset(set(v2.edges+v3.edges)):
-                    # For each v4 in pos_edges\{N(v2) + N(v3)}, if both edges 
-                    # are unknown, try adding non-edges between v4 and {v2, v3} 
-                    # and seeing if this produces a contradiction. If so, 
-                    # v4 \sim {v2,v3}, even though neither is currently an edge 
-                    # in the graph. 
-                    escape=False
-                    for vidx in pos_edges-set(v2.edges+v3.edges):
-                        v4=self.vertex_list[vidx]
-                        if not (v2.index in v4.unknown and 
-                                v3.index in v4.unknown):
-                            escape=True
-                            break
-                        tgraph=copy.deepcopy(self)
-                        tgraph.vertex_list[vidx].non_edges.append(v2.index)
-                        tgraph.vertex_list[vidx].non_edges.append(v3.index)
-                        tgraph.clean()
-                        if not tgraph.update_graph_flexible(subgraph_list, 
-                                update_speed, verbose=False, with_colors=False, 
-                                min_subgraph=min_subgraph):
-                            escape=True
-                            break
-                    if escape:
-                        continue
-                        
-                # Add a new neighbor adjacent to v1 not adjacent to v2 or v3 
-                # and check if that yields a contradiction
-                if v1.max_degree==None or len(v1.edges)<v1.max_degree:
-                    tgraph=copy.deepcopy(self)
-                    new_idx=len(tgraph.vertex_list)
-                    new_vert=vert([v1.index], [v2.index, v3.index], new_idx)
-                    tgraph.vertex_list.append(new_vert)
-                    tgraph.clean()
-                    if verbose:
-                        print('Checking if N({})'.format(v1.index)
-                            + ' is contained in N({})'.format(v2.index)
-                            + ' and N({})'.format(v3.index))
-                    # Break unless the update returns a contradiction
-                    if not tgraph.update_graph_flexible(subgraph_list, 
-                            update_speed, verbose=False, with_colors=False, 
-                            min_subgraph=min_subgraph):
-                        continue
-
-                # Now we run a coloring argument
-                if verbose:
-                    print('N({}) is contained in'.format(v1.index)
-                        + ' N({}) and N({}).'.format(v2.index, v3.index)
-                        + ' Attempting coloring...')
-                v2.color=0
-                v3.color=1
-                v1.color_start=True
-                old_num_vertices=len(self.vertex_list)
-                if self.fill_in_colors():
-                    if verbose:
-                        print('Contradiction obtained filling in colors.')
-                    return True
-                if self.color_argument_iter(subgraph_list, v1.index, 
-                        max_distance, verbose=verbose, 
-                        add_vertices=add_vertices, min_subgraph=min_subgraph, 
-                        carg_update_speed=carg_update_speed):
-                    return True
-                if len(self.vertex_list)>old_num_vertices:
-                    if verbose:
-                        print('New vertex added in coloring-updating...')
-                    if self.update_graph4(subgraph_list, verbose=False, 
-                            with_colors=False, min_subgraph=min_subgraph):
-                        return True
-
-                # Reset the colors after
-                for v in self.vertex_list:
-                    v.color=None
-                    v.color_start=False
-                
             for v1 in self.vertex_list:
-                # Try to color if the vertex is degree 3
+                for v2 in self.vertex_list:
+                    for v3 in self.vertex_list:
+                        ###check that vertices are distinct, and that N(v1) < N(v2) \cup N(v3)
+                        if not (v1 !=v2 and v1 !=v3 and v2.index<v3.index):
+                            continue
+                        if not set(v1.edges + v1.unknown).issubset(set(v2.edges + v3.edges)):
+                            ###For each v4 in {v1.edges + v1.unknown}\{N(v2) + N(v3)}, if both edges are unknown, try adding non-edges between v4 and {v2, v3} and seeing if this produces a contradiction. If so, v4 \sim {v2,v3}, even though neither is currently an edge in the graph. 
+                            escape=False
+                            for vidx in set(v1.edges + v1.unknown)-set(v2.edges + v3.edges):
+                                v4=self.vertex_list[vidx]
+                                if not (v2.index in v4.unknown and v3.index in v4.unknown):
+                                    escape=True
+                                    break
+                                temp_graph=copy.deepcopy(self)
+                                temp_graph.vertex_list[vidx].non_edges.append(v2.index)
+                                temp_graph.vertex_list[vidx].non_edges.append(v3.index)
+                                temp_graph.clean()
+                                if not temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                                    escape=True
+                                    break
+                            if escape:
+                                continue
+                        ###Add a new neighbor adjacent to v1 not adjacent to v2 or v3 and check if that yields a contradiction
+                        if v1.max_degree==None or len(v1.edges)<v1.max_degree:
+                            temp_graph=copy.deepcopy(self)
+                            new_vert=vert([v1.index], [v2.index, v3.index], len(temp_graph.vertex_list))
+                            temp_graph.vertex_list.append(new_vert)
+                            temp_graph.clean()
+                            if verbose:
+                                print('Checking if N({}) is contained in N({}) and N({})'.format(v1.index, v2.index, v3.index))
+                            ###If the update returns a contradiction, proceed, otherwise break
+                            if not temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                                continue
+
+                        ###Now we run a coloring argument
+                        if verbose:
+                            print('N({}) is contained in N({}) and N({}). Attempting coloring...'.format(v1.index, v2.index, v3.index))
+                        v2.color=0
+                        v3.color=1
+                        v1.color_start=True
+                        old_num_vertices=len(self.vertex_list)
+                        if self.fill_in_colors():
+                            if verbose:
+                                print('Contradiction obtained filling in colors.')
+                            return True
+                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
+                            return True
+                        if len(self.vertex_list)>old_num_vertices:
+                            if verbose:
+                                print('New vertex added in coloring- updating...')
+                            if self.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
+                                return True
+
+                        ###reset the colors after
+                        for vertex in self.vertex_list:
+                            vertex.color=None
+                            vertex.color_start=False
+                
+                ###try to color if the vertex is degree 3
                 if check_deg_three and len(v1.edges)==3 and len(v1.unknown)==0:
-                    # First check if it is forced to have degree only 3 by 
-                    # adding a new neighbor and seeing if that creates a 
-                    # contradiction.
+                    ###first check if it is forced to have degree only 3 by adding a new neighbor and seeing if that creates a contradiction.
                     if v1.max_degree != 3:
                         if verbose:
-                            print('Checking if {}'.format(v1.index)
-                                + ' is degree 3.')
-                        tgraph=copy.deepcopy(self)
-                        new_vert=vert([v1.index], [], len(tgraph.vertex_list))
-                        tgraph.vertex_list.append(new_vert)
-                        tgraph.clean()
+                            print('Checking if {} is degree 3.'.format(v1.index))
+                        temp_graph=copy.deepcopy(self)
+                        new_vert=vert([v1.index], [], len(temp_graph.vertex_list))
+                        temp_graph.vertex_list.append(new_vert)
+                        temp_graph.clean()
                         deg_three=False
-                        if tgraph.update_graph_flexible(subgraph_list, 
-                                update_speed, verbose=False, with_colors=False, 
-                                min_subgraph=min_subgraph):
+                        if temp_graph.update_graph_flexible(subgraph_list, update_speed, verbose=False, with_colors=False, min_subgraph=min_subgraph):
                             deg_three=True
                     else:
                         deg_three=True
 
-                    # In both cases, we try to color, but if the degree is 3, 
-                    # then the coloring returns a contradiction if the degree is 
-                    # not forced to be 3, then a coloring contradiction forces a 
-                    # new neighbor.
+                    ###in both cases, we try to color, but if the degree is 3, then the coloring returns a contradiction if the degree is not forced to be 3, then a coloring contradiction forces a new neighbor.
                     if deg_three:
                         if verbose:
-                            print('{} is degree 3.'.format(v1.index)
-                                + ' Attempting coloring...')
+                            print('{} is degree 3. Attempting coloring...'.format(v1.index))
                         v1.max_degree=3
                         if self.fill_in_colors(v1.index):
                             if verbose:
-                                print('Contradiction obtained filling'
-                                    + ' in colors.')
+                                print('Contradiction obtained filling in colors.')
                             return True
-                        if self.color_argument_iter(subgraph_list, v1.index, 
-                                max_distance, verbose=verbose, 
-                                add_vertices=add_vertices, 
-                                min_subgraph=min_subgraph, 
-                                carg_update_speed=carg_update_speed):
+                        if self.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
                             return True
-                    # This is the case where the degree is not forced to be 3. 
+                    ###this is the case where the degree is not forced to be 3. 
                     elif add_vertices:
                         if verbose:
-                            print('{} is not forced to be'.format(v1.index) 
-                                + ' degree 3. Attempting coloring to try to'
-                                + ' force a new neighbor'
-                                + ' of {}.'.format(v1.index))
-                        tgraph=copy.deepcopy(self)
-                        tgraph.vertex_list[v1.index].max_degree=3
+                            print('{} is not forced to be degree 3. Attempting coloring to try to force a new neighbor of {}.'.format(v1.index, v1.index))
+                        temp_graph=copy.deepcopy(self)
+                        temp_graph.vertex_list[v1.index].max_degree=3
                         add_vert=False
-                        if tgraph.fill_in_colors(v1.index):
+                        if temp_graph.fill_in_colors(v1.index):
                             add_vert=True
-                        if (not add_vert) and tgraph.color_argument_iter(
-                                subgraph_list, v1.index, max_distance, 
-                                verbose=verbose, add_vertices=add_vertices, 
-                                min_subgraph=min_subgraph, 
-                                carg_update_speed=carg_update_speed):
+                        if (not add_vert) and temp_graph.color_argument_iter(subgraph_list, v1.index, max_distance, verbose=verbose, add_vertices=add_vertices, min_subgraph=min_subgraph, carg_update_speed=carg_update_speed):
                             add_vert=True
-                        # Add a new vertex and update if appropriate
+                        ###add a new vertex and update if a contradiction was thrown. 
                         if add_vert:
                             if verbose:
-                                print('{} Must have degree at'.format(v1.index)
-                                    + ' least 4; adding a new neighbor and'
-                                    + ' updating...')
-                            new_idx=len(self.vertex_list)
-                            new_vert=vert([v1.index], [], new_idx)
+                                print('{} Must have degree at least 4; adding a new neighbor and updating...'.format(v1.index))
+                            new_vert=vert([v1.index], [], len(self.vertex_list))
                             self.vertex_list.append(new_vert)
                             self.clean()
-                            if self.update_graph4(subgraph_list, verbose=False, 
-                                    with_colors=False, 
-                                    min_subgraph=min_subgraph):
+                            if self.update_graph4(subgraph_list, verbose=False, with_colors=False, min_subgraph=min_subgraph):
                                 return True
                             self.show()
 
-                    #Reset the colors after, for either case
-                    for v in self.vertex_list:
-                        v.color=None
-                        v.color_start=False     
+                    ###reset the colors after, for either case
+                    for vertex in self.vertex_list:
+                        vertex.color=None
+                        vertex.color_start=False     
                     
             ###check for updates
             updated=False
             if len(self.vertex_list) != len(old_graph.vertex_list):
                 updated=True
             else:
-                for v in self.vertex_list:
-                    v_old=old_graph.vertex_list[v.index]
-                    if (set(v.edges) != set(v_old.edges) or
-                            set(v.non_edges) != set(v_old.non_edges)):
+                for vertex in self.vertex_list:
+                    if ((set(vertex.edges) != set(old_graph.vertex_list[vertex.index].edges)) or
+                        (set(vertex.non_edges) != set(old_graph.vertex_list[vertex.index].non_edges))
+                       ):
                         updated=True
             if not updated:
                 break
@@ -1657,7 +1299,6 @@ class graph:
         return False
     
     def update_graph6(self, subgraph_list, add_vertices=True, update_speed='medium', max_distance=10, verbose=False, min_subgraph=None, check_deg_three=False, carg_update_speed='fast'):
-        #123456789012345678901234567890123456789012345678901234567890123456789012345678
         ###Heavier graph update function, checking every unknown edge to see if adding it as an edge/non-edge will obtain a contradiction with update_graph2_2()
 
         stored_index=0 ###Stores the index of the last visited vertex, so that as the graph is updated, vertice can be visited in a cyclical pattern.
@@ -1931,14 +1572,14 @@ class graph:
                     for vertex in self.vertex_list:
                     #####Update colors #####
                         if vertex.color==None:
-                            vertex.clist=[]
+                            vertex.color_list=[]
                             for temp_graph in graph_list:
                                 if temp_graph.vertex_list[vertex.index].color ==None:
-                                    vertex.clist.append(-1)
+                                    vertex.color_list.append(-1)
                                 else:
-                                    vertex.clist.append(temp_graph.vertex_list[vertex.index].color)
-                            if (-1 not in vertex.clist) and (len(set(vertex.clist))==1):
-                                vertex.color=vertex.clist[0]
+                                    vertex.color_list.append(temp_graph.vertex_list[vertex.index].color)
+                            if (-1 not in vertex.color_list) and (len(set(vertex.color_list))==1):
+                                vertex.color=vertex.color_list[0]
                         #####Update Edges #####
                         for index1 in vertex.unknown:
                             edge_list=[]
@@ -2258,20 +1899,4 @@ for j in range(1, 5):
         lem3_7_graph.vertex_list[i].fixed_index=True
     lem3_7_list0.append(lem3_7_graph)
 lem3_7_list0=lem3_7_list0 + lem3_6_list
-
-lem3_7_list=[]
-for j in range(5):
-    v_0 = vert([1, 4], [], 0)
-    v_1 = vert([2, 0], [], 1)
-    v_2 = vert([3, 1], [], 2)
-    v_3 = vert([4, 2], [], 3)
-    v_4 = vert([0, 3], [], 4)
-    v_5 = vert([j, (2+j)%5], [], 5)
-    lem3_7_graph=graph([v_0, v_1, v_2, v_3, v_4, v_5])
-    lem3_7_graph.clean()
-    lem3_7_graph.update_graph(lem2_5_list)
-    for i in range(5):
-        lem3_7_graph.vertex_list[i].fixed_index=True
-    lem3_7_list.append(lem3_7_graph)
-lem3_7_list=lem3_7_list + lem2_5_list
 
