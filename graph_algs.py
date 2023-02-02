@@ -235,8 +235,6 @@ class graph:
 
     def contains_subgraphs(self, subgraph_list):
         """Checks if the graph contains any subgraphs in subgraph_list. 
-        Returns True if at least one subgraph from the list is contained in 
-        the graph, otherwise False.
         
         Args:
             subgraph_list (list[graph]): List of subgraphs to be searched for.
